@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{dc714491-6033-4737-a1c5-9c4f78519b17}</ProjectGuid>
+    <RootNamespace>roblox_external</RootNamespace>
+    <!-- The exe's file name is detection surface: a process called
+         "roblox_external.exe" names itself to every process-name scan on the
+         machine. Neutral, generic, and one place to change - the project is
+         "roblox_external" (RootNamespace, above) so the built binary does not
+         have to repeat that. -->
+    <TargetName>external</TargetName>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+
+  <!-- x64 Debug -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)imgui;$(ProjectDir)..\glass-obsidian\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;shell32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- x64 Release -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Full</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <StringPooling>true</StringPooling>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)imgui;$(ProjectDir)..\glass-obsidian\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;shell32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Win32 Debug -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)imgui;$(ProjectDir)..\glass-obsidian\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;shell32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Win32 Release -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Full</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <StringPooling>true</StringPooling>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)imgui;$(ProjectDir)..\glass-obsidian\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;shell32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Enable MASM for .asm files -->
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
+
+  <!-- Source files -->
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="overlay.cpp" />
+    <ClCompile Include="nt_syscalls.cpp" />
+    <ClCompile Include="media_tracker.cpp" />
+    <MASM Include="syscall_stub.asm" />
+    <ClCompile Include="offsets_live.cpp" />
+    <ClCompile Include="platform\platform_win.cpp" />
+    <ClCompile Include="menu.cpp" />
+    <ClCompile Include="memory.cpp" />
+    <ClCompile Include="process.cpp" />
+    <ClCompile Include="game.cpp" />
+    <ClCompile Include="cache.cpp" />
+    <ClCompile Include="features\aimbot\aimbot.cpp" />
+    <ClCompile Include="features\esp\esp.cpp" />
+    <ClCompile Include="features\flight\flight.cpp" />
+    <ClCompile Include="features\movement\mover.cpp" />
+    <ClCompile Include="features\noclip\noclip.cpp" />
+    <ClCompile Include="features\players\players.cpp" />
+    <ClCompile Include="features\camera\camera_drive.cpp" />
+    <ClCompile Include="features\freecam\freecam.cpp" />
+    <ClCompile Include="features\waypoints\waypoints.cpp" />
+    <ClCompile Include="features\walkspeed\walkspeed.cpp" />
+    <ClCompile Include="features\click_teleport\click_teleport.cpp" />
+    <ClCompile Include="features\infinite_jump\infinite_jump.cpp" />
+    <ClCompile Include="features\fov_changer\fov_changer.cpp" />
+    <ClCompile Include="features\inventory_checker\inventory_checker.cpp" />
+    <ClCompile Include="features\skybox_changer\skybox_changer.cpp" />
+    <ClCompile Include="features\hitbox_expander\hitbox_expander.cpp" />
+    <ClCompile Include="features\config\config.cpp" />
+    <ClCompile Include="features\servers\servers.cpp" />
+    <ClCompile Include="features\servers\servers_http.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\glass.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\palette.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\theme.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\window.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\axiom.cpp" />
+    <ClCompile Include="ui\menu_ui.cpp" />
+    <ClCompile Include="imgui\imgui.cpp" />
+    <ClCompile Include="imgui\imgui_draw.cpp" />
+    <ClCompile Include="imgui\imgui_tables.cpp" />
+    <ClCompile Include="imgui\imgui_widgets.cpp" />
+    <ClCompile Include="imgui\backends\imgui_impl_dx11.cpp" />
+    <ClCompile Include="imgui\backends\imgui_impl_win32.cpp" />
+  </ItemGroup>
+
+  <!-- Header files -->
+  <ItemGroup>
+    <ClInclude Include="globals.h" />
+    <ClInclude Include="input_mouse.h" />
+    <ClInclude Include="features\servers\servers.h" />
+    <ClInclude Include="features\servers\servers_json.h" />
+    <ClInclude Include="features\servers\servers_http.h" />
+    <ClInclude Include="memory.h" />
+    <ClInclude Include="process.h" />
+    <ClInclude Include="game.h" />
+    <ClInclude Include="offsets.h" />
+    <ClInclude Include="platform\platform.h" />
+    <ClInclude Include="offsets_live.h" />
+    <ClInclude Include="cache.h" />
+    <ClInclude Include="world_detect.h" />
+    <ClInclude Include="overlay.h" />
+    <ClInclude Include="nt_syscalls.h" />
+    <ClInclude Include="media_tracker.h" />
+    <ClInclude Include="features\aimbot\aimbot.h" />
+    <ClInclude Include="features\esp\esp.h" />
+    <ClInclude Include="features\flight\flight.h" />
+    <ClInclude Include="features\movement\mover.h" />
+    <ClInclude Include="features\noclip\noclip.h" />
+    <ClInclude Include="features\walkspeed\walkspeed.h" />
+    <ClInclude Include="features\click_teleport\click_teleport.h" />
+    <ClInclude Include="features\click_teleport\tp_math.h" />
+    <ClInclude Include="features\infinite_jump\infinite_jump.h" />
+    <ClInclude Include="features\fov_changer\fov_changer.h" />
+    <ClInclude Include="features\inventory_checker\inventory_checker.h" />
+    <ClInclude Include="features\skybox_changer\skybox_changer.h" />
+    <ClInclude Include="features\players\players.h" />
+    <ClInclude Include="features\camera\camera_drive.h" />
+    <ClInclude Include="features\freecam\freecam.h" />
+    <ClInclude Include="features\waypoints\waypoints.h" />
+    <ClInclude Include="features\hitbox_expander\hitbox_expander.h" />
+    <ClInclude Include="features\config\config.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\obsidian.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\detail.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\palette.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\theme.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\glass.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\window.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\axiom.h" />
+    <ClInclude Include="ui\menu_ui.h" />
+  </ItemGroup>
+
+  <!-- Data shipped next to the exe: offsets_fallback.json is the complete dump
+       the tool falls back on when no offset source is reachable. It used to
+       sit in the repo without being in the project at all, so no build ever
+       carried it and the "fallback" path was dead code. -->
+  <ItemGroup>
+    <Content Include="offsets_fallback.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  </ImportGroup>
+</Project>
