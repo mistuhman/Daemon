@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Roblox External
+GenericName=Game Overlay
+Comment=Linux plug-and-play external for Sober — ESP, aimbot, teleport (Void Flatpak)
+Exec=roblox-external
+Icon=application-x-executable
+Terminal=false
+Categories=Game;Utility;
+Keywords=roblox;sober;external;overlay;esp;game;
+StartupWMClass=roblox-external
+StartupNotify=true
