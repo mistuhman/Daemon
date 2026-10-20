@@ -1,0 +1,65 @@
+# ──────────────────────────────────────────────────────────
+# Build outputs
+# ──────────────────────────────────────────────────────────
+x64/
+x86/
+Win32/
+Release/
+Debug/
+build/
+build-smoke/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.iobj
+*.ipdb
+*.res
+*.tlog/
+*.log
+
+# ──────────────────────────────────────────────────────────
+# Visual Studio
+# ──────────────────────────────────────────────────────────
+.vs/
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.VC.opendb
+launch.vs.json
+CMakeSettings.json
+
+# ──────────────────────────────────────────────────────────
+# ImGui runtime
+# ──────────────────────────────────────────────────────────
+imgui.ini
+imgui_log.txt
+
+# ──────────────────────────────────────────────────────────
+# OS junk
+# ──────────────────────────────────────────────────────────
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ──────────────────────────────────────────────────────────
+# Misc
+# ──────────────────────────────────────────────────────────
+*.bak
+*.orig
+*.swp
+*~
+
+# ──────────────────────────────────────────────────────────
+# Agent layer (docs/DOCTRINE.md rule 6 — artifacts out of Git).
+# The passthrough caches harness binaries under <tmp>/roblox-external-checks/
+# and its probe scratch files here, never in the tree. The one committed
+# exception is glass-obsidian/out + preview: the encoder that makes them
+# (tools/encode_shots.py) lives in the repo too, so they stay reproducible.
+# ──────────────────────────────────────────────────────────
+node_modules/
+.ctx-probe.tmp
