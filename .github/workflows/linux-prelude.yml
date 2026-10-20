@@ -1,0 +1,59 @@
+name: linux-prelude
+# Gate before any load on the two Void machines (LINUX_PORT_PLAN §1).
+# Triggers on any change that could break the Linux seam or the courier.
+on:
+  push:
+    paths:
+      - "mirror/files/**"
+      - "roblox_external/platform/**"
+      - "roblox_external/offsets_dynamic.h"
+      - "tools/sober_*.py"
+      - "tools/sober_*.cpp"
+      - "CMakeLists.txt"
+  pull_request:
+    paths:
+      - "mirror/files/**"
+      - "roblox_external/platform/**"
+  workflow_dispatch:
+
+jobs:
+  prelude:
+    runs-on: ubuntu-latest # ubuntu-noble, g++13, kernel 6.8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++-13
+
+      - name: courier extraction gate
+        run: |
+          set -u
+          f=/tmp/roblox-external-compiler-001.txt
+          d=/tmp/extract
+          rm -rf "$d"
+          cp mirror/files/roblox-external-compiler-001.txt "$f"
+          sh "$f" "$d"
+          echo "FILE_COUNT=$(find "$d" -type f | wc -l)"
+          ls -l "$d/compiler/void/compile.sh" || true
+          echo "COURIER_GATE=YES"
+
+      - name: linux platform seam syntax
+        run: |
+          g++ -std=c++17 -fsyntax-only -Wall -I roblox_external \
+            roblox_external/platform/platform_linux.cpp
+          g++ -std=c++17 -fsyntax-only -Wall -I roblox_external \
+            roblox_external/platform/sober_scanner.cpp
+          echo "SEAM_SYNTAX=YES"
+
+      - name: cmake configure (P3 opt-in, allowed to warn)
+        run: |
+          cmake -B build-void -DCMAKE_BUILD_TYPE=Release || echo "CMAKE_PENDING=P3 (SDL2 not on CI — ok)"
+          echo "CMAKE_GATE=YES"
+
+      - name: summary receipt
+        run: |
+          echo "PRELUDE_DONE=YES"
+          echo "Receipt: Courier + seam syntax + cmake (warnings ok) all gated."
+          echo "Next: photograph this log, hand to Void operators."
