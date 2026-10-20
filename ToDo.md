@@ -4,6 +4,19 @@
 
 `- [ ]` = open (the passthrough reads these as the session objective), `- [x]` = done.
 
+- [ ] **BASELINE-009 follow-ups (2026-10-20, operator receipt).** The build fix is
+      proven live (BUILD_DONE=YES / BOOT_DONE=YES; receipt shas and the what-works
+      list in `docs/baseline-009.md`, version tagged `baseline-009`). Two live
+      failures stand against it: **(1) the overlay never appeared over Sober** —
+      the manager owned the process but setup's demo run names the cause verbatim:
+      `SDL_GL_CreateContext failed: Could not make GL context current: BadMatch
+      (invalid parameter attributes) — headless` → `falling to headless timer`;
+      same failure under Load = a log-only process, no window. Fix the GLX
+      visual/attrib path (alpha-visual fallback chain, log the requested attribs
+      on failure) and re-verify the locked overlay shows. **(2) a crash "on a
+      baseplate"** — pin which process died (overlay vs Sober); the bootstrapper
+      does not capture the overlay's stdout so a crash leaves no log — capture
+      overlay output from `bootcore::StartOverlay` to a file beside the exe.
 - [ ] **NEXT SESSION — Linux features and a real overlay.** Live operator receipt
       confirms production attachment to the ELF-identified Sober client and a
       successful graphics build. Game-object layout remains unsupported; keep
@@ -109,9 +122,6 @@ Logged automatically by `node agent/context.ts` — the 12 most recent entries a
 mirrored here from `agent/memory/session.jsonl` (which keeps everything).
 
 <!-- session-log:start -->
-- 2026-10-20T03:21:33.936Z · arena/d0f99e6b-daemon@8896f4d · context pass + checks (dirty:183)
-- 2026-10-20T03:22:32.709Z · arena/d0f99e6b-daemon@8896f4d · context pass + checks (dirty:183)
-- 2026-10-20T05:53:58.086Z · arena/0d8895ff-daemon@cfeadd3 · context pass (dirty:0)
 - 2026-10-20T07:36:42.526Z · arena/fcc8ff24-daemon@f7a44e5 · Session start: read README.md, familiarizing with repo per user request. (dirty:0)
 - 2026-10-20T07:42:27.154Z · arena/fcc8ff24-daemon@f7a44e5 · User note: '2log/txt committed to main' — inspecting log/txt files committed on main. (dirty:2)
 - 2026-10-20T07:45:31.094Z · arena/fcc8ff24-daemon@f7a44e5 · 2log.txt (origin/main @ 89d978e, user build receipt from /home/sd/Daemon): daemon link fails — ~460 undefined refs to memory layer (is_valid_address, g_memory, read_raw/write_raw, instance::*, fetchstring, mem::*, config::*, clear_instance_caches). User: Daemon is supposed to be built off of the template's working bootloader etc. Diagnosing root cause in tree. (dirty:2)
@@ -121,4 +131,7 @@ mirrored here from `agent/memory/session.jsonl` (which keeps everything).
 - 2026-10-20T08:47:37.245Z · arena/fcc8ff24-daemon@f7a44e5 · Build receipt 2log.txt fixed at cause (memory.cpp + config.cpp missing from CORE_SOURCES; media:: dup; config:: signature mismatch). link_seam_check.sh was hollow (missing heredoc EOF — never compiled anything) and is now a real gate, proven both ways against the 2log shape (21 seams named) and this tree (56 TUs, 0 seams); wired into --checks=full. check_win_tu.sh revived (quote bug, menu.cpp sentinel, Linux TU list, MSVC tripwire removed). features-geometry include root fixed. Bootstrapper polish: OverlayPath rename leftovers. (dirty:11)
 - 2026-10-20T08:52:24.471Z · arena/fcc8ff24-daemon@f7a44e5 · context pass + full checks (dirty:11)
 - 2026-10-20T08:53:39.645Z · arena/fcc8ff24-daemon@f7a44e5 · All green: headless build links daemon + daemon-boot; boot smoke 7/7 vs real binary; --checks=full 5/5 (win32-tu-parse, link-seam, obsidian-headless, features-geometry, menu-shots). link-seam proven both ways: 2log shape → 21 named seams on daemon target; this tree → 59 TUs, 0 seams. Committing build fixes + gate completion. (dirty:11)
+- 2026-10-20T08:57:07.870Z · arena/fcc8ff24-daemon@34091b9 · User: deliver the release through the established xbps-fetch mirror (not a branch pull). Packing next payload via tools/pack_linux_payload.sh, letting the frozen mirror-upload courier publish, then handing back the xbps-fetch one-liner. (dirty:0)
+- 2026-10-20T09:14:03.325Z · arena/fcc8ff24-daemon@8adc9bc · PAYLOAD 009 RECEIPT (operator, Void): sha 80ea52c9...c078a6 matched, DAEMON_LINUX_009_DONE=YES, setup.sh BUILD_DONE=YES + BOOT_DONE=YES — the 2log.txt link fix is proven live. Bootstrapper live: attached pid 2512, ELF bias 0x7f1668270000, Load spawned overlay pid 2854, Unload SIGTERM restored writes, doctor set yama=0. TWO LIVE FAILURES to track: (1) overlay never appeared over Sober — SDL_GL_CreateContext failed BadMatch (invalid parameter attributes) during setup's demo run -> headless fallback; likely same under Load. (2) crash 'on a baseplate' — need to confirm which process died. User: immortalize THIS version as a baseline. (dirty:2)
+- 2026-10-20T09:16:11.637Z · arena/fcc8ff24-daemon@8adc9bc · Baseline record written (docs/baseline-009.md + operator screenshot). GL diagnosis: overlay_linux.cpp forces a 32-bit ARGB X visual BY ID (SDL_VIDEO_X11_WINDOW_VISUALID) then asks GLX for core-3.0/depth24/stencil8/alpha8 — if that X visual is not a GLX-capable fbconfig (or lacks depth/stencil), glXCreateContext returns BadMatch -> headless. The visual-id force (added for the 'not 32-bit ARGB' field report) flipped one failure for another. Fix owed: pick an fbconfig that is GLX + ARGB32, or retry unforced on failure. (dirty:2)
 <!-- session-log:end -->
