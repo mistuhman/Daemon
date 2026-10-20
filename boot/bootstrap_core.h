@@ -14,6 +14,7 @@
 // -----------------------------------------------------------------------------
 #include <cstdint>
 #include <cstddef>
+#include <string>
 
 namespace bootcore {
 
@@ -46,5 +47,11 @@ bool StopOverlay();
 
 // Directory of this executable, with trailing slash ("./" fallback).
 const char* ExeDir();
+
+// Path where the overlay's stdout/stderr is captured (overlay.log).
+// When running from build/ inside an extracted daemon-NNN tree, the file is
+// at the extraction root (visible in the file-manager's 7-item view); otherwise
+// beside the executable. Used by the UI to tell the operator where to look.
+std::string OverlayLogPathForUi();
 
 } // namespace bootcore

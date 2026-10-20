@@ -97,6 +97,7 @@ int Tick(void*)
         char err[256];
         if (bootcore::StartOverlay(err, sizeof(err))) {
             Blog("auto-load: overlay launched (--locked)");
+            Blog("overlay log: %s", bootcore::OverlayLogPathForUi().c_str());
         } else {
             Blog("auto-load failed: %s", err);
         }
@@ -114,9 +115,10 @@ int Tick(void*)
 void OnLoad(void*, void*)
 {
     char err[256];
-    if (bootcore::StartOverlay(err, sizeof(err)))
+    if (bootcore::StartOverlay(err, sizeof(err))) {
         Blog("Load: overlay launched (--locked — hidden unless Sober's window is up)");
-    else
+        Blog("overlay log: %s", bootcore::OverlayLogPathForUi().c_str());
+    } else
         Blog("Load failed: %s", err);
 }
 
@@ -181,6 +183,7 @@ int RunGtk(int argc, char** argv)
 
     g->widget_show_all(g_app.window);
     Blog(DAEMON_DISPLAY_NAME ": bootstrapper up (streamproof + --locked overlay contract ready)");
+    Blog("overlay log will be: %s", bootcore::OverlayLogPathForUi().c_str());
     Tick(nullptr);
     g->timeout_add(1000, Tick, nullptr);
     g->main();
