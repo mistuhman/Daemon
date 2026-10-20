@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 //  tools/offsets_flow_test.cpp  --  RefreshOffsets' decision tree, off Windows
 // -----------------------------------------------------------------------------
-//   g++ -std=c++17 -O1 -w -I"../roblox_external" -I"tools/win32_stub" \
+//   g++ -std=c++17 -O1 -w -I"../daemon" -I"tools/win32_stub" \
 //       tools/offsets_flow_test.cpp -o build/offsets_flow_test
 //   ./build/offsets_flow_test
 //
@@ -15,7 +15,7 @@
 #include "features/servers/servers_http.h"
 #include "globals.h"
 
-#include "../roblox_external/offsets_live.cpp"
+#include "../daemon/offsets_live.cpp"
 
 #include <cstdio>
 #include <string>
@@ -108,7 +108,7 @@ static size_t HitIndex(const char* needle)
     return (size_t)-1;
 }
 
-// A scratch dir per scenario, because ExeDir() lands on ".\\" under the stub
+// A scratch dir per scenario, because ExeDir() lands on "./" under the stub
 // and the cache files (offsets.json / offsets.version) are written there.
 static std::string EnterScratchDir()
 {

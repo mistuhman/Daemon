@@ -7,7 +7,7 @@
 #include <cstring>
 #include <dirent.h>
 #include <elf.h>
-#include "../roblox_external/platform/linux_elf.h"
+#include "../daemon/platform/linux_elf.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>

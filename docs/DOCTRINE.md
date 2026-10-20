@@ -7,10 +7,8 @@ agent session can cold-start in one command, remember what happened, and prove i
 before doing work.
 
 It is not a copy of the template. The template is generic C++-agnostic; this repo is a
-Windows C++ external that is developed mostly from **Linux sandboxes that cannot build
-the Windows half**. That asymmetry is what the layer was fitted to: the passthrough
-dumps the host's real map, and `--checks` runs the invariant checks that *do* work here
-instead of pretending a Linux box can run `msbuild`.
+**Linux C++ external (Daemon)** that is developed from **Linux sandboxes**. The passthrough
+dumps the host's real map, and `--checks` runs the invariant checks that work here.
 
 ## The six rules
 
@@ -47,18 +45,18 @@ instead of pretending a Linux box can run `msbuild`.
    This repo already had that habit before the agent layer arrived — `check_win_tu.sh`,
    `tools/mover_pace_test.cpp`, the headless harnesses — so the doctrine extends it rather
    than introducing it: **`node agent/context.ts --checks` runs the repo's own cheap
-   invariants** (the Windows.h containment rule, the no-direct-WinAPI-read/write rule, the
+   invariants** (the no-Windows-headers rule, the no-direct-WinAPI-read/write rule, the
    offsets fallback parses), and `--checks=full` adds the two g++ harnesses that prove the
    app's UI and the library headlessly.
 
 5. **Branch discipline.** Work happens only on the session branch
-   (`arena/13aa7aab-roblox-external` for this session). Never create, switch to, or push
+   (`arena/d0f99e6b-daemon` for this session). Never create, switch to, or push
    another branch; never push `main`. The passthrough's risk block flags a branch that is
    neither the session branch nor `main`.
 
 6. **Artifact discipline.** Generated bloat stays out of Git: probe corpora and build
    caches go to `/tmp` (the passthrough caches harness binaries under
-   `<tmp>/roblox-external-checks/`). The one committed exception is the shot gallery
+   `<tmp>/daemon-checks/`). The one committed exception is the shot gallery
    (`glass-obsidian/out/`, `glass-obsidian/preview/`) — and it is committed because the
    encoder that produces it lives in the repo too (`tools/encode_shots.py`); ARCHITECTURE
    §9 records what happened when that pipeline was a scratch-dir script nobody could
@@ -68,11 +66,10 @@ instead of pretending a Linux box can run `msbuild`.
 
 - **It does not commit, push, merge, or open PRs by itself.** It logs and reports; the
   agent still has to say what it did.
-- **It does not build the Windows half.** No `msbuild` exists in a Linux sandbox and no
-  amount of TypeScript changes that. `check_win_tu.sh` *parses* 26 of the app's TUs against
-  a stub `<Windows.h>`; `main.cpp`, `overlay.cpp` and `media_tracker.cpp` are checked on
-  the Windows side, by hand. A green `--checks` is "nothing here broke the parseable half",
-  not "the exe links".
+- **It does not build a Windows half.** This is a Linux-only project. `check_win_tu.sh`
+  *parses* the app's TUs against a stub `<Windows.h>` to prove no Windows headers leak
+  into the platform-free layer. A green `--checks` is "nothing here broke the parseable
+  half", not "the exe links on Windows".
 - **It does not touch the game.** Nothing in `agent/` opens a process, reads memory, or
   makes a network request. The layer is documentation, a git/doc reader, and two g++
   invocations.

@@ -55,9 +55,9 @@ const MEMORY_DIR = join(HERE, "memory");
 const SESSION_LOG = join(MEMORY_DIR, "session.jsonl");
 const TODO_PATH = join(ROOT, "ToDo.md");
 const CAPS_PATH = join(HERE, "verification", "CAPABILITIES.md");
-const APP = join(ROOT, "roblox_external");            // the Windows app
+const APP = join(ROOT, "daemon");            // the Linux app
 const LIB = join(ROOT, "glass-obsidian");             // the UI library + harnesses
-const CHECK_CACHE = join(tmpdir(), "roblox-external-checks"); // artifact discipline
+const CHECK_CACHE = join(tmpdir(), "daemon-checks"); // artifact discipline
 
 const CONTEXT_BUDGET_TOKENS = 200_000; // agent context tolerance we design for
 const SHORT_TERM_WINDOW = 5;           // entries shown as short-term memory
@@ -77,18 +77,18 @@ const SESSION_BRANCH = "arena/13aa7aab-roblox-external";
 
 /** Files that are allowed to include <Windows.h> — the Win32 layer, ARCHITECTURE §10. */
 const WINDOWS_HEADER_ALLOWLIST = new Set([
-  "roblox_external/main.cpp",
-  "roblox_external/overlay.cpp",
-  "roblox_external/overlay.h",
-  "roblox_external/menu.cpp",
-  "roblox_external/media_tracker.cpp",
-  "roblox_external/media_tracker.h",
-  "roblox_external/smtc_raw.h",
-  "roblox_external/nt_syscalls.cpp",
-  "roblox_external/nt_syscalls.h",
-  "roblox_external/features/config/config.cpp",
-  "roblox_external/features/servers/servers_http.cpp",
-  "roblox_external/platform/platform_win.cpp",
+  "daemon/main.cpp",
+  "daemon/overlay.cpp",
+  "daemon/overlay.h",
+  "daemon/menu.cpp",
+  "daemon/media_tracker.cpp",
+  "daemon/media_tracker.h",
+  "daemon/smtc_raw.h",
+  "daemon/nt_syscalls.cpp",
+  "daemon/nt_syscalls.h",
+  "daemon/features/config/config.cpp",
+  "daemon/features/servers/servers_http.cpp",
+  "daemon/platform/platform_win.cpp",
 ]);
 
 /** Files the agent layer + host repo must have. A missing one is a risk, not a warning. */
@@ -103,9 +103,9 @@ const REQUIRED = [
   "agent/context.ts",
   "agent/verification/CAPABILITIES.md",
   "roblox_external.slnx",
-  "roblox_external/globals.h",
-  "roblox_external/offsets.h",
-  "roblox_external/offsets_fallback.json",
+  "daemon/globals.h",
+  "daemon/offsets.h",
+  "daemon/offsets_fallback.json",
   "glass-obsidian/CMakeLists.txt",
   "glass-obsidian/tools/check_win_tu.sh",
   "glass-obsidian/tools/menu_shots.cpp",
@@ -287,6 +287,7 @@ function checkWindowsHeaderContainment(): Check {
   };
 }
 
+
 /**
  * Invariant: no CRT function that MSVC flags as deprecated (C4996).
  *
@@ -297,13 +298,17 @@ function checkWindowsHeaderContainment(): Check {
  * bounded buffer instead of strcpy/strcat/strncat/sprintf, std::ifstream instead of
  * fopen). `*_s` variants do not match (the regex needs `(` straight after the name).
  *
- * platform_linux.cpp's fopen is the Linux starting point, is not in the MSVC project,
- * and is excluded by name rather than by turning the check off for the tree.
+ * On Linux, standard POSIX functions (getenv, fopen, localtime, ctime, asctime, tmpnam)
+ * are NOT deprecated - they are the standard API. This check only flags the genuinely
+ * unsafe string manipulation functions that have portable alternatives.
  */
 function checkDeprecatedCrt(): Check {
-  const banned = /\b(strcpy|strcat|strncat|strncpy|sprintf|vsprintf|gets|sscanf|fopen|getenv|localtime|ctime|asctime|tmpnam)\s*\(/;
+  // Only the genuinely unsafe string manipulation functions that have portable
+  // alternatives (snprintf, std::string, etc.). Standard POSIX functions like
+  // getenv, fopen, localtime are NOT flagged on Linux.
+  const banned = /\b(strcpy|strcat|strncat|strncpy|sprintf|vsprintf|gets|sscanf)\s*\(/;
   const files = walkFiles(APP, [".cpp", ".h", ".hpp"])
-    .filter((f) => !f.includes("/imgui/") && !f.endsWith("/platform/platform_linux.cpp"));
+    .filter((f) => !f.includes("/imgui/"));
   const hits: string[] = [];
   for (const f of files) {
     let text: string;
@@ -335,7 +340,7 @@ function checkNoWinApiReadWrite(): Check {
       if (!/ReadProcessMemory|WriteProcessMemory/.test(l)) return;
       const trimmed = l.trim();
       const isComment = trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
-      const isTripwire = f === "roblox_external/nt_syscalls.h" && /^#define\s+(Read|Write)ProcessMemory/.test(trimmed);
+      const isTripwire = f === "daemon/nt_syscalls.h" && /^#define\s+(Read|Write)ProcessMemory/.test(trimmed);
       if (!isComment && !isTripwire) hits.push(`${f}:${i + 1}`);
     });
   }

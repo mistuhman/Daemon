@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 //  tools/offsets_apply_test.cpp  --  the offset-dump parsers, off Windows
 // -----------------------------------------------------------------------------
-//   g++ -std=c++17 -O1 -w -I"../roblox_external" -I"tools/win32_stub" \
+//   g++ -std=c++17 -O1 -w -I"../daemon" -I"tools/win32_stub" \
 //       tools/offsets_apply_test.cpp -o build/offsets_apply_test
 //   ./build/offsets_apply_test
 //
@@ -20,7 +20,7 @@
 #include "features/servers/servers_http.h"
 #include "globals.h"
 
-#include "../roblox_external/offsets_live.cpp"
+#include "../daemon/offsets_live.cpp"
 
 #include <cstdio>
 #include <string>
@@ -123,16 +123,16 @@ static const char* kWeaoVersion =
 "{\n  \"fetchedAt\": \"2026-09-09T23:55:01.561Z\",\n  \"data\": {\n    \"current\": {\n"
 "      \"Windows\": \"version-c5aecda2245e4fae\",\n      \"WindowsDate\": \"x\",\n"
 "      \"WindowsResponse\": {\"clientVersionUpload\": \"version-c5aecda2245e4fae\"}\n"
-"}}}";
+"}}}\n";
 static const char* kJinaVersion =
 "Title: \nURL Source: https://offsets.imtheo.lol/roblox/version\nMarkdown Content:\nversion-c5aecda2245e4fae\n";
 
 // Reads the repo's shipped fallback (run from glass-obsidian/ or from tools/).
 static bool ReadRepoFallback(std::string& out)
 {
-    const char* paths[] = { "../roblox_external/offsets_fallback.json",
-                            "roblox_external/offsets_fallback.json",
-                            "../../roblox_external/offsets_fallback.json" };
+    const char* paths[] = { "../daemon/offsets_fallback.json",
+                            "daemon/offsets_fallback.json",
+                            "../../daemon/offsets_fallback.json" };
     for (const char* p : paths)
         if (ReadFile(p, out) && !out.empty()) return true;
     return false;
@@ -267,8 +267,8 @@ int main()
     // globals are exactly what a successful parse overwrites.
     {
         std::string hdr;
-        const char* paths[] = { "../roblox_external/offsets.h", "roblox_external/offsets.h",
-                                "../../roblox_external/offsets.h" };
+        const char* paths[] = { "../daemon/offsets.h", "daemon/offsets.h",
+                                "../../daemon/offsets.h" };
         for (const char* p : paths)
             if (ReadFile(p, hdr) && !hdr.empty()) break;
         Ok(!hdr.empty(), "read offsets.h");

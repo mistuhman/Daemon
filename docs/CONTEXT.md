@@ -20,18 +20,19 @@ and missing, `--checks` says so.
 
 | Path | Purpose |
 |---|---|
-| `roblox_external/` | the app: `main.cpp` (WinMain + loops), `overlay.*` (DX11 + ImGui window), `menu.cpp` (Win32 menu glue), `ui/menu_ui.cpp` (platform-free menu, Glass Obsidian widgets), `globals.h` (all settings) |
-| `roblox_external/features/` | 26 dirs: one per feature, plus the shared rule headers (`esp/range.h`, `fov/fov_encode.h`, `misc/body_rules.h`, `raycast/world_ray.h`); every motion write goes through `features/movement/mover.cpp`. `features/aimtrack/` was removed when the aimbot was reverted to its original implementation |
-| `roblox_external/platform/` | the platform seam — `platform.h` is the only surface features may call; `platform_win.cpp` is real, `platform_linux.cpp` is a stub that refuses rather than pretends |
-| `roblox_external/offsets.h` | offsets for one client version, **merged never pasted** (`tools/offsets_regen.py`); `offsets_live.cpp` refreshes them at launch |
-| `roblox_external/imgui/` | vendored Dear ImGui 1.91.1 (backend-free core) |
+| `daemon/` | the app: `main.cpp` (Linux main + loops), `overlay.h/.cpp` (SDL2+GL overlay), `menu_linux.cpp` (Linux menu glue), `ui/menu_ui.cpp` (platform-free menu, Glass Obsidian widgets), `globals.h` (all settings) |
+| `daemon/features/` | 27 dirs: one per feature, plus shared rule headers (`esp/range.h`, `fov/fov_encode.h`, `misc/body_rules.h`, `raycast/world_ray.h`); every motion write goes through `features/movement/mover.cpp` |
+| `daemon/platform/` | the platform seam — `platform.h` is the only surface features may call; `platform_linux.cpp` is the real Linux impl (process_vm_readv/writev, X11 overlay control) |
+| `daemon/offsets.h` | offsets for one client version, **merged never pasted** (`tools/offsets_regen.py`); zeroed on Linux, filled by `offsets_dynamic.cpp` at runtime |
+| `daemon/offsets_dynamic.cpp` | runtime offset discovery via `sober_scanner` — no Windows fallback |
+| `daemon/imgui/` | vendored Dear ImGui 1.91.1 (SDL2+OpenGL3 backends only) |
 | `glass-obsidian/` | the UI library, its headless harness, its software rasteriser, and the shot gallery |
-| `glass-obsidian/tools/check_win_tu.sh` | parses the app's 39 parseable TUs against a stub `<Windows.h>` — the app's only CI-shaped check that runs off Windows |
+| `glass-obsidian/tools/check_win_tu.sh` | parses the app's TUs against a stub `<Windows.h>` — proves no Windows headers leak (runs off Windows) |
 | `glass-obsidian/tools/menu_shots.cpp` | renders the real `ui/menu_ui.cpp` headlessly and checks nothing draws outside its clip |
 | `docs/ARCHITECTURE.md` | the technical record: motion blocks, offsets pipeline, platform seam, open problems |
 | `docs/CHANGELOG.md` | branch changelog, newest first, with the reasoning |
 | `docs/offsets_dump.txt` | the raw dump for the shipped client version |
-| `docs/LIVE_CHECKLIST.md` | the Windows session as a script: one step per ❓ row in `README.md`, what answers it, what to send back |
+| `docs/LIVE_CHECKLIST.md` | the Linux session as a script: one step per ❓ row in `README.md`, what answers it, what to send back |
 
 ## Commands
 
@@ -70,18 +71,12 @@ Exit code: `0` clean, `2` at least one probe or check failed. The brief is alway
 
 Both are load-bearing, both are cheap to check, and both have a documented reason:
 
-1. **`<Windows.h>` stays in the Win32 layer.** Allowed includers: `main.cpp`,
-   `overlay.cpp/.h`, `menu.cpp`, `media_tracker.cpp`, `smtc_raw.h`,
-   `features/config/config.cpp`, `features/servers/servers_http.cpp`, `nt_syscalls.*`,
-   `platform/platform_win.cpp` (and the vendored `imgui/` tree). Everything else must go
-   through `platform::`. ARCHITECTURE §10: the seam is the port plan *and* the fix for
-   import-table strings a signature scanner anchors on.
+1. **`<Windows.h>` stays in the Win32 layer.** None in this repo — we are Linux-only.
+   All platform calls go through `platform::` seam.
 2. **No `ReadProcessMemory` / `WriteProcessMemory`, not even as a name.**
-   `nt_syscalls.h` poisons both identifiers with a tripwire `#define`; the only legal
-   textual occurrence is that define. Reads and writes go through
-   `nt::ReadVirtualMemory` / `nt::WriteVirtualMemory` over indirect syscalls.
+   Linux uses `process_vm_readv`/`process_vm_writev` via `platform::ReadMem`/`WriteMem`.
 
-A third, softer check: `roblox_external/offsets_fallback.json` still parses as JSON (it is
+A third, softer check: `daemon/offsets_fallback.json` still parses as JSON (it is
 generated alongside `offsets.h` and is what the app falls back to when no offset source
 answers).
 

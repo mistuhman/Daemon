@@ -136,11 +136,11 @@ Save the full maps line that shows `r-xp libroblox.so` — I need its address to
 ### 1D) Your next run — exact copy-paste for P1 (before P2 Sig 1)
 
 ```sh
-cd ~/roblox-external
-git pull origin arena/b83aa5e5-roblox-external
-g++ -std=c++17 -I roblox_external \
-    roblox_external/platform/platform_linux.cpp \
-    roblox_external/platform/sober_scanner.cpp \
+cd ~/daemon
+git pull origin arena/b83aa5e5-daemon
+g++ -std=c++17 -I daemon \
+    daemon/platform/platform_linux.cpp \
+    daemon/platform/sober_scanner.cpp \
     tools/sober_probe.cpp -o /tmp/probe -lpthread
 # Keep Sober running in another terminal (flatpak run org.vinegarhq.Sober &)
 /tmp/probe
@@ -267,7 +267,7 @@ cat /proc/net/tcp | grep 12345           # inode line → local:remote port, sta
 Concrete design — `platform/port_watcher.h`:
 
 ```cpp
-// roblox_external/platform/port_watcher.h — Fleasion parity
+// daemon/platform/port_watcher.h — Fleasion parity
 namespace portwatch {
 
 struct SocketInfo {
@@ -344,7 +344,7 @@ Operator photographs this — it replaces manual `ps aux` receipts.
 ### 5.1 Now (this week, no manual PID)
 
 ```sh
-cd ~/roblox-external && git pull origin arena/b83aa5e5-roblox-external
+cd ~/daemon && git pull origin arena/b83aa5e5-daemon
 cmake -B build-void -DCMAKE_BUILD_TYPE=Release
 cmake --build build-void -j$(nproc) --target sober_probe
 flatpak run org.vinegarhq.Sober &   # or /opt/sober/sober &

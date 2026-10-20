@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 //  tools/menu_shots.cpp  --  renders the real menu to PNGs, with no GPU
 // -----------------------------------------------------------------------------
-//  This compiles `roblox_external/ui/menu_ui.cpp` -- the file the overlay actually
+//  This compiles `daemon/ui/menu_ui.cpp` -- the file the overlay actually
 //  draws -- against a stub platform layer, then rasterises each page with
 //  tools/soft_raster.h. It exists because a layout change in a menu like this
 //  fails visually, not logically: sliders that overflow their card, a rail that

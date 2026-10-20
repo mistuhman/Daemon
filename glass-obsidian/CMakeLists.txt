@@ -66,11 +66,11 @@ if(OBSIDIAN_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/tools")
 
     # ---------------------------------------------------------------------
-    #  menu_shots renders the *application's* menu (roblox_external/ui) against
+    #  menu_shots renders the *application's* menu (daemon/ui) against
     #  a stub platform layer, so a layout change can be reviewed as PNGs. It is
     #  only configured when the host project is checked out next to this one.
     # ---------------------------------------------------------------------
-    set(OBSIDIAN_HOST_UI "${CMAKE_CURRENT_SOURCE_DIR}/../roblox_external/ui")
+    set(OBSIDIAN_HOST_UI "${CMAKE_CURRENT_SOURCE_DIR}/../daemon/ui")
     if(EXISTS "${OBSIDIAN_HOST_UI}/menu_ui.cpp")
         add_executable(obsidian_menu_shots
             tools/menu_shots.cpp
@@ -78,7 +78,7 @@ if(OBSIDIAN_BUILD_TESTS)
         target_link_libraries(obsidian_menu_shots PRIVATE obsidian)
         target_include_directories(obsidian_menu_shots PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/tools"
-            "${CMAKE_CURRENT_SOURCE_DIR}/../roblox_external")
+            "${CMAKE_CURRENT_SOURCE_DIR}/../daemon")
     endif()
 endif()
 

@@ -32,17 +32,16 @@ import re
 import sys
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-HDR  = os.path.join(ROOT, "roblox_external", "offsets.h")
-JSON = os.path.join(ROOT, "roblox_external", "offsets_fallback.json")
+HDR  = os.path.join(ROOT, "daemon", "offsets.h")
+JSON = os.path.join(ROOT, "daemon", "offsets_fallback.json")
 
 FIELD_RE = re.compile(
     r"^(?P<pre>\s*inline (?:constexpr )?uintptr_t (?P<name>\w+)\s*=\s*)"
     r"(?P<val>0x[0-9a-fA-F]+|\d+)(?P<post>\s*;.*)$")
 CLASS_RE = re.compile(r"^\s*namespace (\w+) \{\s*$")
 
-
 def parse_header(text):
-    """(ordered {class: {field: value}}, {class: [lines]], version)."""
+    """(ordered {class: {field: value}}, {class: [lines]}, version)."""
     fields, order, cls, ver = {}, [], None, None
     for ln in text.split("\n"):
         m = CLASS_RE.match(ln)

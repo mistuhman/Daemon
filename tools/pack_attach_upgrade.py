@@ -7,15 +7,15 @@ import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
 files = [
-    'roblox_external/platform/sober_scanner.cpp',
-    'roblox_external/platform/sober_scanner.h',
-    'roblox_external/platform/platform_linux.cpp',
-    'roblox_external/platform/main_linux.cpp',
-    'roblox_external/game.cpp',
-    'roblox_external/menu_linux.cpp',
-    'roblox_external/offsets_dynamic.cpp',
+    'daemon/platform/sober_scanner.cpp',
+    'daemon/platform/sober_scanner.h',
+    'daemon/platform/platform_linux.cpp',
+    'daemon/platform/main_linux.cpp',
+    'daemon/game.cpp',
+    'daemon/menu_linux.cpp',
+    'daemon/offsets_dynamic.cpp',
     'boot/bootstrap_core.cpp',
-    'roblox_external/platform/linux_elf.h',
+    'daemon/platform/linux_elf.h',
 ]
 new_path = files[-1]
 lines = ['''#!/bin/sh
@@ -55,7 +55,7 @@ while read -r path before after; do
      echo "Unsupported or locally modified source: $path; nothing changed." >&2; exit 1;
    }
  else
-   [ "$before" = '-' ] || { echo "Missing source: $path; nothing changed." >&2; exit 1; }
+   [ "$before" = "-" ] || { echo "Missing source: $path; nothing changed." >&2; exit 1; }
  fi
 done < "$WORK/manifest"
 while read -r path before after; do

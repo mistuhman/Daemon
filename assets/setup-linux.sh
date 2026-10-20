@@ -1,5 +1,5 @@
 #!/bin/sh
-# roblox-external Void setup — payload linux-016 (bootstrapper yama fix repack after cnet sha mismatch)
+# Daemon Void setup — payload linux-016 (bootstrapper yama fix repack after cnet sha mismatch)
 #
 # The 004 build failed with make's Error 2 hidden by `| tail -n 20`: the real
 # compiler error scrolled out of the photographed output. This version keeps
@@ -7,7 +7,7 @@
 # hands back the exact serial rebuild command that lists errors in order.
 set -u
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-echo "=== roblox-external Void setup (payload $(basename "$0")) ==="
+echo "=== Daemon Void setup (payload $(basename "$0")) ==="
 if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
     Y=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo "?")
     echo "[setup] yama ptrace_scope=$Y"
@@ -35,7 +35,7 @@ if ! cmake -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release -S "$ROOT" >>"$LOG" 2>&1;
     exit 1
 fi
 if grep -q "SDL2+GL found" "$LOG"; then
-    echo "[setup] overlay windowed (WM_CLASS=roblox-external via SDL_VIDEO_X11_WMCLASS)"
+    echo "[setup] overlay windowed (WM_CLASS=daemon via SDL_VIDEO_X11_WMCLASS)"
 else
     echo "[setup] overlay headless (SDL2/GL missing — ESP/aim still run via logs)"
 fi
@@ -59,12 +59,12 @@ else
     exit "$rc"
 fi
 
-ls -lh "$ROOT/build/external" && echo "BUILD_DONE=YES" || exit 1
-ls -lh "$ROOT/build/roblox-external-boot" >/dev/null 2>&1 && echo "BOOT_DONE=YES" || echo "[setup] WARN: roblox-external-boot missing (build log above)"
+ls -lh "$ROOT/build/daemon" && echo "BUILD_DONE=YES" || exit 1
+ls -lh "$ROOT/build/daemon-boot" >/dev/null 2>&1 && echo "BOOT_DONE=YES" || echo "[setup] WARN: daemon-boot missing (build log above)"
 
 # ---- doctor: the walls a fresh operator box puts up (docs/BOOTSTRAPPER.md) --
-echo "[doctor] ---- readiness scan (roblox-external-boot --check) ----"
-"$ROOT/build/roblox-external-boot" --check 2>&1 || true
+echo "[doctor] ---- readiness scan (daemon-boot --check) ----"
+"$ROOT/build/daemon-boot" --check 2>&1 || true
 if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
     Y=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo "?")
     if [ "$Y" != "0" ]; then
@@ -85,8 +85,8 @@ fi
 echo "[setup] install desktop entry: sh $ROOT/assets/install.sh"
 sh "$ROOT/assets/install.sh" 2>&1 | tail -n 10 || true
 # Headless smoke tests: two seconds of startup logs prove the binaries run.
-timeout 2 "$ROOT/build/external" 2>&1 | head -n 30 || true
-timeout 3 "$ROOT/build/roblox-external-boot" --console --exit-after 2 2>&1 | head -n 20 || true
-echo "RUN: $ROOT/build/roblox-external-boot   (the manager — click Load once Sober is up)"
-echo "     or ~/.local/bin/roblox-external-boot (ulauncher: type 'roblox')"
-echo "     terminal/no-GUI fallback: $ROOT/build/roblox-external-boot --console"
+timeout 2 "$ROOT/build/daemon" 2>&1 | head -n 30 || true
+timeout 3 "$ROOT/build/daemon-boot" --console --exit-after 2 2>&1 | head -n 20 || true
+echo "RUN: $ROOT/build/daemon-boot   (the manager — click Load once Sober is up)"
+echo "     or ~/.local/bin/daemon-boot (ulauncher: type 'daemon')"
+echo "     terminal/no-GUI fallback: $ROOT/build/daemon-boot --console"
