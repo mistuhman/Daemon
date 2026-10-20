@@ -1,0 +1,8 @@
+#!/bin/sh
+# Build in a private temporary directory, using the already-required compiler.
+set -eu
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/sober-attach.XXXXXXXX")
+trap 'rm -rf "$WORK"' EXIT HUP INT TERM
+"${CXX:-g++}" -std=c++17 -O2 "$HERE/sober_attach.cpp" -ldl -o "$WORK/sober-attach"
+"$WORK/sober-attach" "$@"

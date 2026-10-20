@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glass Obsidian — rendered proof</title>
+<style>
+  :root{
+    --bg:#05060a; --panel:#0a0e15; --edge:#2e384a; --text:#e8ecf4;
+    --dim:#99a2b4; --accent:#e9a13b; --accent2:#e2603f; --ok:#4ade80;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:
+      radial-gradient(900px 600px at 22% 18%, rgba(233,161,59,.10), transparent 60%),
+      radial-gradient(800px 560px at 80% 76%, rgba(226,96,63,.10), transparent 60%),
+      linear-gradient(#0b0d13, #05060a);
+    color:var(--text);
+    font:15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header{
+    padding:56px 24px 8px; text-align:center;
+  }
+  h1{
+    margin:0 0 6px; font-size:34px; letter-spacing:.02em;
+    background:linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  header p{margin:0 auto; max-width:760px; color:var(--dim)}
+  .stats{
+    display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:22px 0 8px;
+  }
+  .chip{
+    border:1px solid var(--edge); border-radius:999px; padding:5px 14px;
+    background:rgba(23,29,41,.7); font-size:12.5px; color:var(--dim);
+  }
+  .chip b{color:var(--text)}
+  main{max-width:1160px; margin:0 auto; padding:24px 20px 80px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(520px,1fr)); gap:26px}
+  figure{
+    margin:0; background:var(--panel); border:1px solid var(--edge);
+    border-radius:14px; overflow:hidden;
+    box-shadow:0 18px 40px rgba(0,0,0,.55);
+  }
+  figure img{display:block; width:100%; height:auto; background:#000}
+  figcaption{padding:12px 16px 14px; border-top:1px solid var(--edge)}
+  figcaption h3{margin:0 0 2px; font-size:14.5px}
+  figcaption p{margin:0; font-size:12.5px; color:var(--dim)}
+  .wide{grid-column:1/-1}
+  h2.sect{max-width:1160px; margin:64px auto 6px; padding:0 20px; font-size:23px;
+           letter-spacing:.02em; color:var(--text)}
+  h2.sect span{color:var(--accent)}
+  p.sectp{max-width:1160px; margin:0 auto 26px; padding:0 20px; color:var(--dim);
+           font-size:13.5px; line-height:1.55}
+  footer{color:var(--dim); text-align:center; font-size:12.5px; padding:0 20px 60px}
+  code{background:#131826; border:1px solid var(--edge); border-radius:5px; padding:1px 6px; font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Glass Obsidian</h1>
+  <p>A collapse-safe window class and a layered glass/obsidian theme for Dear ImGui 1.91.
+     Every image below is a real frame of the library, rendered headlessly (no GPU, no
+     window system) by the software rasteriser in <code>tools/soft_raster.h</code> and
+     written straight to PNG.</p>
+  <div class="stats">
+    <span class="chip"><b>13 / 13</b>&nbsp;resize &amp; collapse invariants pass</span>
+    <span class="chip"><b>13</b>&nbsp;screenshots at 1440×900</span>
+    <span class="chip">ImGui <b>1.91.1</b>, public API</span>
+    <span class="chip">4 accent presets · live opacity &amp; UI-scale</span>
+    <span class="chip"><b>8 / 8</b>&nbsp;host-app menu pages render in-frame</span>
+  </div>
+</header>
+<main>
+  <div class="grid">
+    <figure class="wide">
+      <img src="img/01-overview.jpg" alt="Overview tab">
+      <figcaption><h3>01 · Overview</h3>
+        <p>Hero panel with accent top-edge, stat cards with gradient meters, and two
+           fill-height columns. The window chrome, tab strip and panels are all
+           translucent — the bloom behind them is the ambient backdrop.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/02-components.jpg" alt="Components tab">
+      <figcaption><h3>02 · Components</h3>
+        <p>Toggles, gradient sliders, buttons, nested tabs, text inputs and combos —
+           all drawn as vector paths, no textures.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/03-palette.jpg" alt="Palette tab">
+      <figcaption><h3>03 · Palette studio</h3>
+        <p>Accent presets, live surface-opacity / UI-scale / corner-radius tuning, and
+           the ascending surface ramp with hex read-outs.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/04-window-bench.jpg" alt="Window bench">
+      <figcaption><h3>04 · Window bench</h3>
+        <p>The collapse/resize controls plus the live invariant suite results rendered
+           inside the UI itself.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/05-about.jpg" alt="About tab">
+      <figcaption><h3>05 · About</h3>
+        <p>Scope, guarantees and the exact recipe of the resize fix.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/06-collapsed.jpg" alt="Collapsed window">
+      <figcaption><h3>06 · Collapsed</h3>
+        <p>Settled state is exactly the title bar height; the body is not submitted at
+           all, so a collapsed overlay costs (almost) nothing.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/07-collapsing.jpg" alt="Mid-collapse animation">
+      <figcaption><h3>07 · Mid-collapse</h3>
+        <p>The morph frozen ~40% through: height, body clip and opacity are driven by
+           the same eased timeline.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/08-aurora.jpg" alt="Aurora preset">
+      <figcaption><h3>08 · Aurora preset @ 0.80 opacity</h3>
+        <p>Every token re-derived from one palette struct; translucency shows the
+           backdrop through the glass.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/08-verdant.jpg" alt="Verdant preset">
+      <figcaption><h3>08 · Verdant preset</h3><p>Same layout, different accent ramp.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/08-crimson.jpg" alt="Crimson preset">
+      <figcaption><h3>08 · Crimson preset</h3><p>Warm red accent, cooler glass.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/08-ember-thin.jpg" alt="Ember thin glass">
+      <figcaption><h3>08 · Ember, thin glass (0.62)</h3>
+        <p>Opacity floor test: text and hairlines follow a gentler alpha curve so the
+           UI stays legible as the glass thins.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/09-compact.jpg" alt="Compact width">
+      <figcaption><h3>09 · Compact 620 px</h3>
+        <p>Single-column fallback: every control still reachable at the shared minimum
+           width.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/10-ui-scale-130.jpg" alt="UI scale 130%">
+      <figcaption><h3>10 · ui_scale 1.30</h3>
+        <p>Font atlas re-baked and window rescaled in place — nothing clips.</p></figcaption>
+    </figure>
+  </div>
+
+  <h2 class="sect">The <span>Axiom</span> layer, on the real menu</h2>
+  <p class="sectp">These eleven are not a demo. They are
+     <code>roblox external/ui/menu_ui.cpp</code> &mdash; the host application's menu &mdash;
+     rendered by <code>tools/menu_shots.cpp</code> against stub platform callbacks, through
+     the same software rasteriser. Because the layout file touches no Win32 and reads no
+     process memory, the picture below <em>is</em> what the overlay draws, which is the only
+     practical way to review a grid change without the game running. Labels are
+     tracked caps because the widgets shout them; notes and hints are ordinary
+     sentences, because a paragraph in caps is unreadable. The last few are states
+     rather than pages &mdash; the ones a page loop cannot reach, because they need a
+     setting and a runtime value to say something in particular together.</p>
+  <p class="sectp">The filing rule for the pages, after a pass that moved things onto the
+     tab that owns them: a setting lives where the <em>decision</em> is made, and a tab
+     that borrows it says so in the group name. Which is how the hitbox expander ended up
+     on the aimbot page, the inventory checker and the blacklist's ESP switch on visuals,
+     every bind alone on the keybinds tab, the flight latch phrased like the aimbot's,
+     and two of the duplicate switches gone. The rail counts moved with the settings they
+     count, because a number that stays behind starts lying about its own tab.</p>
+  <p class="sectp">The next pass took the same rule to the camera: FOV is how much of the
+     screen you see and freecam is the point of view you see it from, so both moved to
+     visuals and the movement page is now only the writes that move your character &mdash;
+     which it shares into two groups, one for how it moves and one for how it arrives
+     somewhere. That pass also moved filing from taste to test: the menu exposes
+     <code>HasGroup("page/name")</code>, so the headless harness asserts that visuals owns
+     the camera and that movement no longer owns a <code>view</code> group. A screenshot of
+     the page a card moved <em>to</em> looks correct either way; only the old tab can say
+     whether it let go.</p>
+  <div class="grid">
+    <figure>
+      <img src="img/menu/01-aimbot.png" alt="Aimbot page">
+      <figcaption><h3>01 &middot; Aimbot</h3>
+        <p>Hero switch for the master toggle &mdash; the only one, a second
+        <code>enabled</code> card lower down used to control the same global from the same
+        page &mdash; then targeting / feel / filters / hitbox / key. Sub-controls appear as
+        their parent switches on, and the grid keeps every row aligned. The hitbox
+        expander moved here from the visuals tab: making their hitbox bigger changes
+        what your bullets hit, which is a combat setting, not a drawing.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/02-visuals.png" alt="Visuals page">
+      <figcaption><h3>02 &middot; Visuals</h3>
+        <p>The densest page: twenty-five toggles in eight groups, a colour card beside
+        every one that needs one, and two groups that are the overlay's own vocabulary
+        &mdash; a shared stroke weight (box, corners, skeleton, health bar, tracers all
+        honour <code>esp_line_width</code>) and the tracer block. One group says in its name
+        who else it belongs to: team check, wall check and hiding blacklisted names are
+        filters the aimbot decides and the ESP obeys, so the toggles live with the
+        decision and the drawing consequences &mdash; the team tint, the inventory
+        readout, the expanded hitbox &mdash; live here. The last group is the camera
+        (FOV changer, freecam), moved over from movement and deliberately after the
+        drawing groups: everything above it is drawn on the overlay, and this is the thing
+        the overlay is drawn on.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/03-movement.png" alt="Movement page">
+      <figcaption><h3>03 &middot; Movement</h3>
+        <p>Sliders that belong to a feature are marked live (accent edge), so you can see
+        what is actually armed without opening a tooltip. The six bind rows that used to
+        end this page are gone: they are on the keybinds tab, grouped once, and a copy
+        here meant two answers to &ldquo;where do I set that&rdquo;. The camera used to be
+        here too, and its old group is what the subtitle sends you to visuals for; what is
+        left now splits into <em>movement</em> (noclip, flight, walkspeed, infinite jump) and
+        <em>teleport</em> (the click, its range cap and its landing height) &mdash; five
+        switches about how the character moves, and one about arriving at a place.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/04-world.png" alt="World page">
+      <figcaption><h3>04 &middot; World</h3>
+        <p>A combo card and a note card reporting what the renderer said back &mdash; the skybox changer's debug string, surfaced instead of logged.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/05-players.png" alt="Players page">
+      <figcaption><h3>05 &middot; Players</h3>
+        <p>Everyone in the server except you, with health, distance and weapon
+        right-aligned so the column scans. Click to pick, double-click to jump, WATCH to
+        spectate. Dead rows are dimmed (0 hp with a readable max health &mdash; a failed
+        read is unknown, not dead); the one you are watching wears the accent. The dim
+        line inside a button card now carries only <em>who</em> it will act on:
+        &ldquo;force refresh&rdquo; under a button reading RESCAN was the card saying it
+        twice, and it is gone.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/06-keybinds.png" alt="Keybinds page">
+      <figcaption><h3>06 &middot; Keybinds</h3>
+        <p>Every bind is a card; clicking it hands capture to the app's key poll, and the
+        row's own dot reports whether any bound feature is live. Escape cancels. Four
+        groups &mdash; menu, aimbot, movement, visuals &mdash; each named after the tab that
+        owns the setting the key flips, which is why freecam and the inventory checker are
+        not filed under &ldquo;movement&rdquo; just because one of them moves you, and why
+        the last category name (&ldquo;view&rdquo;) is gone: a bind page groups by owner,
+        because that is the question it answers &mdash; &ldquo;what does this key move?&rdquo;.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/07-theme.png" alt="Theme page">
+      <figcaption><h3>07 &middot; Theme</h3>
+        <p>Nine collapsible groups, and every control in them repaints the menu the frame it moves: preset, contrast, tint, accent, five rainbow modes, a polish switch for the whole material layer and the ten strengths under it, window size and limits, ui scale, font sizes, grid columns, card and row metrics, rail shape, and which chrome is visible at all. There is no window bloom here on purpose &mdash; the menu paints nothing outside its own rect, not even ImGui's stock window shadow.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/08-config.png" alt="Config page">
+      <figcaption><h3>08 &middot; Config</h3>
+        <p>Name field, save / load / delete cards, and a scrollable list of the files on disk with the count in the rail hint.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/09-debug.png" alt="Debug page">
+      <figcaption><h3>09 &middot; Debug</h3>
+        <p>Two stat cards side by side (pointers, validity, view matrix, local player), three write tests, the last result, and the log with clear / copy.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/00-detached.png" alt="Not attached">
+      <figcaption><h3>&mdash; &middot; Not attached</h3>
+        <p>The state no page owns: no process, no place name, no players. The rail gives up its brand row and keeps only the status chip, and the footer says what is missing instead of printing zeroes.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/00-faded.png" alt="Transparency at 90%">
+      <figcaption><h3>&mdash; &middot; Transparency at 90%</h3>
+        <p>Fade is a property of surfaces, not of text: the fills and their edges recede and the letters stay where they were, so the menu stays readable over a bright skybox at the setting's maximum.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t98-aimbot-armed.png" alt="Aimbot key latched on">
+      <figcaption><h3>&mdash; &middot; Aimbot key, latched</h3>
+        <p>&ldquo;Hold to aim&rdquo; off makes the key a latch: one press arms it, the next
+        disarms it. A toggle whose state you cannot read is a footgun, so the page says
+        <em>armed</em> in the header instead of <em>active</em>, the hold card's hint says what
+        the latch is doing, and the rail row lights with it. The menu cannot ask the
+        feature anything &mdash; that is what the snapshot is for &mdash; which is exactly why
+        this needed a frame: if the wiring is missing, only a picture says so.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t99-player-lists.png" alt="Players lists group">
+      <figcaption><h3>&mdash; &middot; The blacklist, one job</h3>
+        <p>The card used to read &ldquo;aimbot + esp&rdquo;: two features in one label, and a
+        promise the list no longer makes by default. It is the <em>aimbot</em> blacklist now,
+        the scroll card says so, and hiding those names from ESP is its own switch &mdash;
+        &ldquo;do not aim at them&rdquo; and &ldquo;do not draw them&rdquo; are decisions a user may
+        want separately, and a friend you never want to lock onto is still someone you may
+        want to see through a wall.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t100-visuals-camera.png" alt="Visuals page, camera group">
+      <figcaption><h3>&mdash; &middot; The camera, filed with the look</h3>
+        <p>The moved group, framed by closing the seven groups above it &mdash; it is the
+        last thing on a page taller than the window, so a shot that clipped it would have
+        proved nothing, and the frame is 820px rather than 620 for exactly that reason.
+        Both switches are on, because a slider its own card reveals is the layout that
+        gets used, and the one most likely to overflow a cell.</p></figcaption>
+    </figure>
+  </div>
+
+  <h2 class="sect">Nine <span>palettes</span>, two knobs, one frame</h2>
+  <p class="sectp">The page loop above can only ever shoot the default theme, which is
+     exactly the blind spot a theme system needs closed: a light preset that is only
+     light in its own token names, a contrast knob that washes text out instead of
+     hardening it. So the harness walks the same table the theme page offers &mdash;
+     all nine &mdash; and asserts two things in numbers rather than by eye: that the
+     ink sits on the correct side of its surface for the preset's polarity, and that
+     text on panel clears 4.5:1 (3:1 for the dim label step). The three pictures here
+     are the ones worth a look; the frames after them are the settings that change the
+     window's structure or its material rather than its hue, which is where a layout
+     actually breaks and where a colour-only review would miss it.</p>
+  <div class="grid">
+    <figure>
+      <img src="img/menu/t3-theme.png" alt="Frost, the light preset">
+      <figcaption><h3>t3 &middot; Frost</h3>
+        <p>Light frosted glass over dark ink, at 11.3:1. Elevation runs the other way
+        from the dark themes &mdash; hover and selection <em>darken</em> &mdash; which is
+        what <code>Palette::light</code> exists for, and why this is a light theme
+        rather than a dark one with the surfaces inverted.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t2-theme.png" alt="Ink, the maximum-contrast preset">
+      <figcaption><h3>t2 &middot; Ink</h3>
+        <p>Pure black, pure white, no accent wash anywhere: 15.5:1 with the whole
+        material still on. A high-contrast theme is not a flat one, it is a theme
+        where the colour means state and nothing else does.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t90-hi-contrast.png" alt="Contrast at 1.0">
+      <figcaption><h3>&mdash; &middot; Contrast 1.0</h3>
+        <p>The contrast knob on Obsidian: surfaces go flat toward the extreme of their
+        polarity (near-black pixels, which is also the OLED setting), the steps between
+        them widen instead of collapsing, the accent washes pull back &mdash; and
+        transparency is untouched, because that is a dial the user set.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t91-rainbow.png" alt="Rainbow, sweep mode">
+      <figcaption><h3>&mdash; &middot; Rainbow: sweep</h3>
+        <p>Five modes, not one: cycle, sweep (the accent pair travels, keeping its
+        hue interval), breathe, duotone (fills cycle, text stays put), off. Every one
+        of them derives its colour from the clock at render time and never writes into
+        the stored accent &mdash; so a config saved mid-cycle keeps the colour that was
+        picked, and switching the mode off needs no stashed previous value.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t92-collapsed.png" alt="Three groups closed">
+      <figcaption><h3>&mdash; &middot; Three groups closed</h3>
+        <p>Base theme, accent and glass closed from the config file's string. A closed
+        group submits nothing &mdash; no empty card, no orphan divider, no clipped
+        row &mdash; so what was underneath moves up to fill it. That is the whole
+        reason the state is a list of <em>closed</em> ids and not a bool per group:
+        the default (all open) is free, and a renamed group costs nothing.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t93-icons-1col-150.png" alt="Icon rail, one column, 150 percent">
+      <figcaption><h3>&mdash; &middot; Icons, 1 column, 150%</h3>
+        <p>The combination most likely to overflow and the one a small screen actually
+        picks: icon strip, single column, everything at 1.5&times;. The session card is
+        gone in this mode because four lines of label/value text do not fit in 56px,
+        and the bleed check on this shot is what says the rest still does.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t94-rail-hidden.png" alt="Rail hidden">
+      <figcaption><h3>&mdash; &middot; Rail hidden</h3>
+        <p>With no sidebar child at all the nav rows and the page are submitted to the
+        window itself &mdash; the case where a child-only clip assumption shows up.
+        Hiding the rail is not cosmetic: it buys the page 220px, which is a second
+        column at 1080p.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t95-frost-visuals.png" alt="Light theme on the densest page">
+      <figcaption><h3>&mdash; &middot; Light theme, densest page</h3>
+        <p>Frost pushed through the page with the most controls on it, checked against
+        the window rect: a light preset breaks differently from a dark one, because the
+        page is drawn in screen space on the container's list and an off-window card is
+        invisible in every other shot here.</p></figcaption>
+    </figure>
+  </div>
+
+  <h2 class="sect">The <span>material</span> layer, on one switch</h2>
+  <p class="sectp">Ten dials is the right amount of control and the wrong amount of work
+     for &ldquo;can you turn that off&rdquo;. <code>Material::polish</code> is the master
+     multiplier: it folds into the ten strengths once, when a palette is installed, so
+     every draw site simply reads 0 and draws nothing &mdash; no sheen, no bloom, no frost
+     ring, no travelling band, flat surfaces. What it deliberately does <em>not</em> touch
+     is <code>animate</code> / <code>speed</code> (freezing movement and removing shine are
+     two questions) and the values you dialled in: the sliders keep their numbers, so the
+     same picture with the switch flipped back on is the material you tuned, to the digit
+     &mdash; which is asserted, both ways, by <code>build/menu_shots</code>. Dragging one
+     of those sliders while polish is off turns polish back on, because wanting the dial is
+     the only reason to reach for it. The two frames share a layout on purpose: the three
+     groups above <em>material</em> are closed so the switch is at the top of the shot,
+     which is also the collapsed-group contract, visible.</p>
+  <div class="grid">
+    <figure>
+      <img src="img/menu/t96-polish-off.png" alt="Polish off">
+      <figcaption><h3>&mdash; &middot; Polish off</h3>
+        <p>Card paper. Same palette, same layout, same nine presets &mdash; the colour
+        tokens and the material are separate layers, so this is what &ldquo;no
+        eye candy, please&rdquo; costs: one click, and the tint is the only thing left
+        telling you it is the Liquid preset.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/menu/t97-polish-on.png" alt="Polish on">
+      <figcaption><h3>&mdash; &middot; Polish on</h3>
+        <p>The same frame with the switch on: accent blooms drifting in the header, a
+        top-edge sheen on every card, the frost rim on the window, a highlight travelling
+        along the slider tracks, and the rail's selected row lit. None of it is a
+        different theme; all of it is one multiplier.</p></figcaption>
+    </figure>
+  </div>
+</main>
+<footer>
+  Rendered by <code>build/headless_tests out</code> and
+  <code>build/menu_shots out/menu</code> · rasterised in software ·
+  Glass Obsidian is a UI library only — it contains no game-interaction code.
+</footer>
+</body>
+</html>
