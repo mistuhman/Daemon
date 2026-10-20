@@ -266,6 +266,13 @@ On the prompt "integrate this" with this file present:
 13.4 Print the inverse (restore command) in the same output as the change.
 13.5 Echo the first error faces verbatim so a failure needs no second round trip.
 13.6 Payloads are public once pushed (rule 3.2): no secrets, tokens, inbox URLs, personal data.
+13.7 Iteration hygiene: every test shipment carries a visible `ti-XX` identity beside Daemon's
+    name (t = testing, i = iteration, XX = testing iteration number). After the new payload has
+    passed extraction, build, and desktop installation, that same shipment removes prior Daemon
+    test-iteration installs. Cleanup must be payload content, not a courier/function-file change;
+    it must identify known Daemon trees with a marker or strict legacy fingerprint, preserve the
+    current tree, refuse broad unverified deletion, and print each removal. Never leave multiple
+    launchers or stale test trees cluttering the operator's desktop.
 == 14. PROVEN MECHANISM FACTS (host behavior, keep as-is) ==
 paste.rs: raw text in, URL out; serves raw bytes; retention unknown.
 dpaste.org: needs format=url + .txt suffix for raw; expiry_days honored.

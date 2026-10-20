@@ -24,6 +24,7 @@
 // ----------------------------------------------------------------------------
 #include "platform/platform.h"
 #include "globals.h"
+#include "version.h"
 
 #ifdef __linux__
 
@@ -370,14 +371,14 @@ static bool TryCreateWindow() {
         SDL_WindowFlags flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
                                                   SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_SKIP_TASKBAR |
                                                   SDL_WINDOW_ALLOW_HIGHDPI);
-        win = SDL_CreateWindow("Daemon", gx, gy, gw, gh, flags);
+        win = SDL_CreateWindow(DAEMON_DISPLAY_NAME, gx, gy, gw, gh, flags);
         if (!win) {
             LogLine("Daemon: SDL_CreateWindow failed (%s): %s", a.what, SDL_GetError());
             continue;
         }
         s_geom_x = gx; s_geom_y = gy; s_geom_w = gw; s_geom_h = gh;
         s_geom_valid = true;
-        SDL_SetWindowTitle(win, "Daemon");
+        SDL_SetWindowTitle(win, DAEMON_DISPLAY_NAME);
         SetWindowIcon(win);
 
         ctx = SDL_GL_CreateContext(win);
