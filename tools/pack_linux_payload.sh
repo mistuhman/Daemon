@@ -84,7 +84,8 @@ if [ -e "\$DEST" ]; then echo "DAEMON_LINUX_${NNN}_FAIL=target-already-exists:\$
 for c in base64 tar sha256sum mktemp; do command -v "\$c" >/dev/null 2>&1 || { echo "DAEMON_LINUX_${NNN}_FAIL=missing:\$c"; exit 1; }; done
 TMP=\$(mktemp -d) || { echo "DAEMON_LINUX_${NNN}_FAIL=mktemp"; exit 1; }
 b64d() { base64 -d "\$1" 2>/dev/null || base64 -D "\$1" 2>/dev/null; }
-sed -n '/^__DAEMON_LINUX_${NNN}_PAYLOAD__\$/,\$p' "\$0" | tail -n +2 > "\$TMP/b64.txt"
+sed -n '/^__DAEMON_LINUX_${NNN}_PAYLOAD__\$/,\$p' "\$0" | tail -n +2 > "\$TMP/b64_raw.txt"
+grep -v '^#' "\$TMP/b64_raw.txt" | grep -v '^[[:space:]]*$' > "\$TMP/b64.txt"
 b64d "\$TMP/b64.txt" > "\$TMP/src.tar.gz" 2>/dev/null || { echo "DAEMON_LINUX_${NNN}_FAIL=base64"; rm -rf "\$TMP"; exit 1; }
 GOT=\$(sha256sum "\$TMP/src.tar.gz" | cut -d' ' -f1)
 echo "ARCHIVE_SHA256_GOT=\$GOT"
@@ -124,4 +125,3 @@ else
     exit 1
 fi
 rm -rf "$VERIFY_PARENT"
-}
