@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Daemon
+Name=Daemon ti-11
 GenericName=Game Overlay
 Comment=Linux bootstrapper for Sober — watch, Load, managed overlay (Void Flatpak)
 Exec=daemon-boot

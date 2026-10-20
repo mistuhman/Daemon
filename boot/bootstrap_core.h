@@ -36,7 +36,7 @@ struct Status {
 // One readiness scan. Cheap (/proc, throttled internals); call from a timer.
 Status Poll();
 
-// Start the overlay beside this executable: <exe-dir>/external --locked.
+// Start the overlay beside this executable: <exe-dir>/daemon --locked.
 // err (optional) receives a human reason on failure.
 bool StartOverlay(char* err, std::size_t errlen);
 

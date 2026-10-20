@@ -16,6 +16,7 @@
 #include "game.h"
 #include "cache.h"
 #include "globals.h"
+#include "version.h"
 #include <cstring>
 
 #include "features/aimbot/aimbot.h"
@@ -208,14 +209,14 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--locked") == 0) g_locked_to_sober = true;
     }
-    fprintf(stdout, "Daemon linux — plug-and-play + dynamic offset fetcher%s\n",
+    fprintf(stdout, DAEMON_DISPLAY_NAME " linux — plug-and-play + dynamic offset fetcher%s\n",
             g_locked_to_sober ? " (--locked)" : "");
     fflush(stdout);
     platform::Init();
     std::signal(SIGINT, OnSigInt);
     std::signal(SIGTERM, OnSigInt);
 
-    LogLine("Daemon linux — plug-and-play + dynamic offset fetcher");
+    LogLine(DAEMON_DISPLAY_NAME " linux — plug-and-play + dynamic offset fetcher");
     if (g_locked_to_sober) {
         LogLine("launched --locked by the bootstrapper — overlay shows only over Sober, streamproofing active");
     } else {

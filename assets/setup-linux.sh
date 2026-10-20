@@ -1,5 +1,5 @@
 #!/bin/sh
-# Daemon Void setup — payload linux-016 (bootstrapper yama fix repack after cnet sha mismatch)
+# Daemon Void setup — current testing iteration ti-11
 #
 # The 004 build failed with make's Error 2 hidden by `| tail -n 20`: the real
 # compiler error scrolled out of the photographed output. This version keeps
@@ -83,7 +83,12 @@ if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
 fi
 
 echo "[setup] install desktop entry: sh $ROOT/assets/install.sh"
-sh "$ROOT/assets/install.sh" 2>&1 | tail -n 10 || true
+if sh "$ROOT/assets/install.sh" 2>&1 | tail -n 10; then
+    printf '%s\n' "ti-11" > "$ROOT/.daemon-iteration"
+    sh "$ROOT/assets/cleanup-previous-iterations.sh"
+else
+    echo "[setup] WARN: desktop install failed; preserving previous iterations"
+fi
 # Headless smoke tests: two seconds of startup logs prove the binaries run.
 timeout 2 "$ROOT/build/daemon" 2>&1 | head -n 30 || true
 timeout 3 "$ROOT/build/daemon-boot" --console --exit-after 2 2>&1 | head -n 20 || true

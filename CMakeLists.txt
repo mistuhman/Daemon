@@ -4,6 +4,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(daemon VERSION 0.1.0 LANGUAGES CXX)
 
+# Operator-facing test/iteration identity. Bump for every shipped payload.
+set(DAEMON_ITERATION "ti-11" CACHE STRING "Daemon testing iteration label")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -44,7 +47,6 @@ set(PLATFORM_SOURCES
   daemon/platform/overlay_linux.cpp
   daemon/platform/main_linux.cpp
   daemon/platform/servers_http_linux.cpp
-  daemon/platform/media_tracker_linux.cpp
   daemon/platform/streamproof_watcher.cpp
 )
 
@@ -53,12 +55,14 @@ set(CORE_SOURCES
   daemon/cache.cpp
   daemon/game.cpp
   daemon/media_tracker.cpp
+  daemon/memory.cpp
   daemon/offsets_live.cpp
   daemon/features/movement/mover.cpp
   daemon/features/aimbot/aimbot.cpp
   daemon/features/antiafk/antiafk.cpp
   daemon/features/camera/camera_drive.cpp
   daemon/features/click_teleport/click_teleport.cpp
+  daemon/features/config/config.cpp
   daemon/features/esp/esp.cpp
   daemon/features/explorer/explorer.cpp
   daemon/features/flight/flight.cpp
@@ -173,7 +177,10 @@ target_include_directories(daemon PRIVATE
 )
 
 target_compile_options(daemon PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
-target_compile_definitions(daemon PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+target_compile_definitions(daemon PRIVATE
+  IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+  DAEMON_ITERATION="${DAEMON_ITERATION}"
+)
 
 if(HAVE_X11)
   target_compile_definitions(daemon PRIVATE HAS_X11=1)
@@ -251,6 +258,7 @@ add_executable(daemon-boot
   daemon/platform/port_watcher.cpp
 )
 target_include_directories(daemon-boot PRIVATE daemon .)
+target_compile_definitions(daemon-boot PRIVATE DAEMON_ITERATION="${DAEMON_ITERATION}")
 target_link_libraries(daemon-boot PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
 if(MUSL_STATIC)
   target_link_options(daemon-boot PRIVATE -static-libstdc++ -static-libgcc)

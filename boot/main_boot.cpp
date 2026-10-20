@@ -17,6 +17,7 @@
 //    --force-load          skip the readiness gate (smoke tests only)
 // -----------------------------------------------------------------------------
 #include "bootstrap_core.h"
+#include "version.h"
 #include "gtk3_loader.h"
 
 #include <cstdarg>
@@ -142,14 +143,14 @@ int RunGtk(int argc, char** argv)
     }
 
     g_app.window = g->window_new(gtk3::WIN_TOPLEVEL);
-    g->window_set_title(g_app.window, "daemon bootstrapper");
+    g->window_set_title(g_app.window, DAEMON_DISPLAY_NAME " bootstrapper");
     g->window_set_default_size(g_app.window, 560, 420);
     g->window_set_position(g_app.window, gtk3::WIN_POS_CENTER);
 
     void* vbox = g->box_new(gtk3::ORIENT_VERTICAL, 8);
     g->container_add(g_app.window, vbox);
 
-    void* title = g->label_new("Daemon — Linux / Sober");
+    void* title = g->label_new(DAEMON_DISPLAY_NAME " — Linux / Sober");
     g->box_pack_start(vbox, title, 0, 0, 4);
 
     g_app.spinner = g->spinner_new();
@@ -179,7 +180,7 @@ int RunGtk(int argc, char** argv)
     g->signal_connect_data(g_app.window, "destroy", OnDestroy, nullptr, nullptr, 0);
 
     g->widget_show_all(g_app.window);
-    Blog("bootstrapper up (streamproof + --locked overlay contract ready)");
+    Blog(DAEMON_DISPLAY_NAME ": bootstrapper up (streamproof + --locked overlay contract ready)");
     Tick(nullptr);
     g->timeout_add(1000, Tick, nullptr);
     g->main();

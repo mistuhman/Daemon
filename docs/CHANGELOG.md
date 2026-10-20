@@ -7,6 +7,85 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     PAYLOAD 010 — THE OVERLAY WINDOW FIX (baseline-009 gap #1) and the
+         crash log (gap #2's first half). "Overlay didn't launch over Sober"
+         is now named to the line: ArgbVisualId() picked the 32-bit ARGB X
+         visual with XMatchVisualInfo — GLX-blind — and the forced visual
+         then made SDL_GL_CreateContext die with "BadMatch (invalid
+         parameter attributes)": GLX cannot bind a context to a visual it
+         never offered. The id now comes FROM the GLX fbconfig list
+         (glXChooseFBConfig: windowable, RGBA, double-buffered, alpha>=8;
+         depth/stencil requested then relaxed; and the GLX_VISUAL_ID must
+         resolve to a 32-bit TrueColor visual). No bindable visual => no
+         force at all and SDL picks its own; window creation gained a second
+         attempt (SDL-chosen visual, relaxed depth/stencil) before headless,
+         every attempt logs what it requested and what the driver said, and
+         the visual-id hint is cleared between attempts (SDL_ResetHint —
+         a leftover force replays the failure it caused). Gap #2: the
+         operator report is that SOBER died on the baseplate — target-
+         process death — so the write path / false-positive offset
+         admission stays suspect; bootcore::StartOverlay now captures the
+         overlay's stdout+stderr to overlay.log beside the exe so the next
+         crash names itself. Compile-proven against REAL headers fetched
+         via codeload/API into /tmp (libX11/xorgproto/libXfixes, SDL
+         2.30.10, Mesa glx.h+glxext.h from the XQuartz/gl4es copies) — six
+         shapes at -Wall -Wextra: platform_linux with X11+XFixes+SDL+GLX
+         (new picker), with X11 alone, and as stubs; overlay_linux with
+         SDL+GL and headless; bootstrap_core. The real SDL headers earned
+         their keep on the first compile: the clear-the-hint call is
+         SDL_ResetHint, not SDL_UnsetHint. Full build + boot smoke 7/7 +
+         --checks=full 5/5 before packing. Frozen courier untouched.
+```
+HEAD     THE BUILD RECEIPT (2log.txt) IS EXPLAINED, FIXED AT ITS CAUSE, AND
+         THE GATE THAT WOULD HAVE CAUGHT IT NOW ACTUALLY RUNS. The operator's
+         latest build receipt — committed to main as 2log.txt — is the link
+         dying on ~460 undefined references to the memory layer
+         (is_valid_address, g_memory, read_raw/write_raw, fetchstring,
+         instance::*, mem::*, config::*). Every one of those symbols is
+         defined in daemon/memory.cpp and daemon/features/config/config.cpp
+         — the two TUs the CMake translation never put in CORE_SOURCES. The
+         Windows project had them in the .slnx (check_win_tu.sh's old TU
+         list remembers); the Linux CMake translation dropped them, and
+         every payload build since has carried the same landmine (payload
+         008's CMakeLists.txt is byte-equal here). Three link fixes, in
+         order of appearance: add the two TUs; resolve the media:: multiple
+         definition (daemon/media_tracker.cpp and platform/media_tracker_
+         linux.cpp both defined the same stub API — the core stub with the
+         mutex-guarded snapshot stays, the empty seam duplicate leaves the
+         build); align config::Save/Load/Delete/Rename with config.h's
+         const std::string& (the .cpp defined const char* overloads, so the
+         four call sites in menu_linux.cpp could never resolve even with
+         config.cpp compiled). The full headless build now links both
+         binaries — build/daemon and build/daemon-boot — and the bootstrapper
+         smoke suite (boot/test/smoke.sh) is 7/7 against the real binary.
+         The gate half of the story: glass-obsidian/tools/link_seam_check.sh
+         — the gate the previous entry promises ("compiles every TU and
+         asserts nothing of ours stays undefined") — was hollow in the tree:
+         its first python heredoc was missing its EOF terminator, so the
+         heredoc ate the whole file and the script printed the source list
+         and exited 0 without compiling anything. That is how a link break
+         this loud shipped. The body is now real (compile every TU the CMake
+         parse lists — app + bootstrapper — with SDL/X11 defines when the
+         headers are reachable, ld -r, then classify every undefined symbol
+         by its MANGLED name: C symbols may stay undefined, C++-mangled
+         non-libstdc++ may not), and it is proven both ways: against the
+         2log source shape (memory.cpp + config.cpp removed) it FAILs and
+         names 21 seam breaks verbatim, exactly the receipt's symbol set;
+         against this tree it passes 56 TUs with zero seams. It now runs in
+         `--checks=full` as `link-seam`. While proving that suite green,
+         three more fossils fell: check_win_tu.sh baked literal quotes into
+         its default OBSIDIAN_APP_DIR (the host app could never be found),
+         gated on the Windows-era menu.cpp sentinel, and carried an MSVC
+         std::thread tripwire that would have false-failed legal Linux
+         threading — sentinel and TU list are the Linux tree now, the
+         tripwire is gone with a comment saying why; the features-geometry
+         harness compiled tools/world_ray_test.cpp with -I<repo>/daemon
+         while the file includes "daemon/features/..." — include root is
+         the repo now; and bootstrap_core dropped the rename's dead
+         OverlayPath branch ('external' → 'daemon'). `--checks=full` is
+         5/5 green (win32-tu-parse, link-seam, obsidian-headless 13/13,
+         features-geometry, menu-shots).
+```
 HEAD     THE APP OPENS AS A BOOTSTRAPPER (dx9ware shape) — and the build break
          it was built against is fixed at its cause. Payload 012 shipped a
          binary the Void box could not link: platform::HasGraphicalDisplay was

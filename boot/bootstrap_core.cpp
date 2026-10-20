@@ -10,6 +10,7 @@
 #include <csignal>
 #include <cstdio>
 #include <cstring>
+#include <fcntl.h>
 #include <fstream>
 #include <string>
 #include <sys/stat.h>
@@ -37,13 +38,11 @@ int ReadYama()
     return v;
 }
 
-// The overlay binary, beside this executable. 'daemon' is the build-tree
-// name; 'daemon' is what assets/install.sh installs it as.
+// The overlay binary, beside this executable: 'daemon' in the build tree and
+// as assets/install.sh installs it (~/.local/bin/daemon next to daemon-boot).
 std::string OverlayPath()
 {
-    const std::string dir = platform::ExeDir();
-    if (FileExists(dir + "daemon")) return dir + "daemon";
-    return dir + "daemon";
+    return platform::ExeDir() + "daemon";
 }
 
 } // namespace
@@ -164,6 +163,16 @@ bool StartOverlay(char* err, std::size_t errlen)
         // there, geometry following it. Its own process group so our Ctrl-C
         // does not race it; it exits on SIGTERM with its restore path.
         setsid();
+        // Capture stdout/stderr to overlay.log beside the exe. At baseline-009
+        // a crash left no trace because the manager kept no pipe for us — the
+        // log is where the next "what died" answers itself.
+        const std::string log = platform::ExeDir() + "overlay.log";
+        const int fd = open(log.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd >= 0) {
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+            if (fd > STDERR_FILENO) close(fd);
+        }
         const char* argv[] = { "daemon", "--locked", nullptr };
         execv(exe.c_str(), (char* const*)argv);
         _exit(127);
