@@ -1,5 +1,5 @@
 #!/bin/sh
-# Daemon Void setup — current testing iteration ti-12
+# Daemon Void setup — current testing iteration ti-13
 #
 # The 004 build failed with make's Error 2 hidden by `| tail -n 20`: the real
 # compiler error scrolled out of the photographed output. This version keeps
@@ -82,8 +82,8 @@ if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
     fi
 fi
 
-printf '%s\n' "ti-12" > "$ROOT/.daemon-iteration"
-echo "[setup] marked current iteration ti-12 ($ROOT/.daemon-iteration)"
+printf '%s\n' "ti-13" > "$ROOT/.daemon-iteration"
+echo "[setup] marked current iteration ti-13 ($ROOT/.daemon-iteration)"
 
 echo "[setup] install desktop entry: sh $ROOT/assets/install.sh"
 if sh "$ROOT/assets/install.sh" 2>&1 | tail -n 10; then
@@ -94,7 +94,7 @@ fi
 
 # Cleanup previous iterations regardless of desktop install outcome — only
 # requires a successful build + marker (the build half is already proven by
-# BUILD_DONE=YES above). This is what removes daemon-009/010 after ti-12.
+# BUILD_DONE=YES above). This is what removes daemon-009/010 after ti-13.
 if sh "$ROOT/assets/cleanup-previous-iterations.sh" 2>&1; then
     echo "[setup] cleanup checked"
 else
