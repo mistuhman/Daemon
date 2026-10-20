@@ -1,0 +1,18 @@
+{
+  "name": "roblox-external",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agent operating layer for roblox-external: doctrine, context, session memory, and one typed passthrough that replaces the legacy ~30-command bash ritual before every agent response.",
+  "type": "module",
+  "scripts": {
+    "ctx": "node agent/context.ts",
+    "ctx:probe": "node agent/context.ts --probe",
+    "ctx:json": "node agent/context.ts --json",
+    "ctx:checks": "node agent/context.ts --checks",
+    "ctx:checks:full": "node agent/context.ts --checks=full",
+    "tu": "sh glass-obsidian/tools/check_win_tu.sh"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}
