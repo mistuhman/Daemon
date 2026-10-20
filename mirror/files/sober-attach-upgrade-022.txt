@@ -1,0 +1,2548 @@
+#!/bin/sh
+# Source-verified Linux attachment upgrade. Uses existing setup/build dependencies.
+set -eu
+[ "$#" -eq 1 ] || { echo "Usage: sh upgrade.txt EXTRACTED_PAYLOAD_DIRECTORY" >&2; exit 2; }
+DEST=$(CDPATH= cd -- "$1" && pwd)
+[ -f "$DEST/CMakeLists.txt" ] && [ -f "$DEST/setup.sh" ] || {
+ echo "Expected an extracted Linux payload source tree, not the installed bin directory." >&2; exit 2;
+}
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/sober-upgrade.XXXXXXXX")
+trap 'rm -rf "$WORK"' EXIT HUP INT TERM
+mkdir -p "$WORK/roblox_external/platform"
+cat > "$WORK/roblox_external/platform/sober_scanner.cpp" <<'SOBER_SOURCE_0_END'
+// ----------------------------------------------------------------------------
+//  platform/sober_scanner.cpp — P0+ P1 plug-and-play + P2 scanning scaffold
+// ----------------------------------------------------------------------------
+//  Attachment uses shared read-only ELF inspection, not comm/cgroup ranking.
+//  Object layout remains unresolved until independently validated. No guessed
+//  scheduler anchors, Windows offsets, nsenter or /proc/self/maps fallbacks.
+// ----------------------------------------------------------------------------
+
+#include "sober_scanner.h"
+
+#ifdef __linux__
+
+#include "linux_elf.h"
+#include <sys/stat.h>
+
+#include <cerrno>
+#include <dirent.h>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <cctype>
+#include <cstdlib>
+#include <algorithm>
+#include <unistd.h>
+#include <utility>
+
+namespace sober {
+
+namespace {
+
+// --- helpers ---------------------------------------------------------------
+
+std::string TrimLeft(const std::string& s) {
+    size_t i = 0;
+    while (i < s.size() && std::isspace((unsigned char)s[i])) ++i;
+    return s.substr(i);
+}
+
+// Parse a single /proc/<pid>/maps line without sscanf.
+// Format: "00400000-00409000 r-xp 00000000 08:01 12345 /path"
+// We need start, end, perms, path (optional).
+bool ParseMapsLine(const std::string& line, uintptr_t& start, uintptr_t& end, std::string& perms, std::string& path) {
+    start = 0; end = 0; perms.clear(); path.clear();
+    // Find '-' separating start-end
+    size_t dash = line.find('-');
+    if (dash == std::string::npos) return false;
+    size_t sp1 = line.find(' ', dash);
+    if (sp1 == std::string::npos) return false;
+    std::string s_start = line.substr(0, dash);
+    std::string s_end = line.substr(dash + 1, sp1 - dash - 1);
+    try {
+        start = (uintptr_t)std::stoull(s_start, nullptr, 16);
+        end   = (uintptr_t)std::stoull(s_end, nullptr, 16);
+    } catch (...) { return false; }
+    // perms is next token
+    size_t p1 = line.find_first_not_of(' ', sp1);
+    if (p1 == std::string::npos) return false;
+    size_t p2 = line.find(' ', p1);
+    if (p2 == std::string::npos) return false;
+    perms = line.substr(p1, p2 - p1);
+    // Skip offset, dev, inode (3 tokens)
+    size_t cur = p2;
+    for (int i = 0; i < 3; ++i) {
+        cur = line.find_first_not_of(' ', cur);
+        if (cur == std::string::npos) return true; // anon line with no path
+        size_t nxt = line.find(' ', cur);
+        if (nxt == std::string::npos) return true;
+        cur = nxt;
+    }
+    cur = line.find_first_not_of(' ', cur);
+    if (cur != std::string::npos) {
+        path = TrimLeft(line.substr(cur));
+    }
+    return true;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------- MapRegions
+
+std::vector<MapRegion> MapRegions(uint32_t pid, bool* denied_out) {
+    std::vector<MapRegion> out;
+    if (denied_out) *denied_out = false;
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%u/maps", pid);
+    std::ifstream f(path);
+    if (!f) {
+        // Permission denied opening maps → yama ptrace_scope (or MAC) is
+        // blocking PTRACE_MODE_READ on this pid. Callers must distinguish
+        // this from "libroblox not mapped" (which would be a true flatpak-ns
+        // or still-starting symptom) so the operator gets the right fix.
+        if (denied_out) {
+            if (errno == EACCES || errno == EPERM) {
+                *denied_out = true;
+            } else if (errno == ENOENT || errno == ESRCH) {
+                // pid gone — not a permission error, leave false
+            }
+        }
+        return out;
+    }
+    std::string line;
+    while (std::getline(f, line)) {
+        uintptr_t start = 0, end = 0;
+        std::string perms, mpath;
+        if (!ParseMapsLine(line, start, end, perms, mpath)) continue;
+        MapRegion r;
+        r.start = start;
+        r.end = end;
+        // maps offset is a separate token; preserve it for ELF header selection.
+        std::istringstream tokens(line);
+        std::string range, permissions, offset;
+        tokens >> range >> permissions >> offset;
+        try { r.offset = std::stoull(offset, nullptr, 16); } catch (...) { continue; }
+        r.perms = perms;
+        r.path = mpath;
+        out.push_back(std::move(r));
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------- FindSoberPid
+
+namespace {
+uintptr_t VerifiedBase(uint32_t pid, const std::vector<MapRegion>& regions) {
+    uintptr_t found = 0;
+    for (const auto& region : regions) {
+        if (region.offset || region.perms.empty() || region.perms[0] != 'r' ||
+            region.path.empty() || region.path[0] != '/') continue;
+        // File/memfd labels are not identity. Read the ELF itself, including
+        // unnamed/deleted mappings, using exactly the diagnostic's inspector.
+        auto image = linux_elf::Inspect(pid, region.start);
+        if (!image.valid || image.soname != "libroblox.so") continue;
+        bool executable = false;
+        for (const auto& code : image.executable_ranges)
+            for (const auto& mapping : regions)
+                if (mapping.perms.find('x') != std::string::npos &&
+                    mapping.start < code.second && mapping.end > code.first)
+                    executable = true;
+        if (!executable) continue;
+        if (found && found != image.bias) return 0; // Ambiguous images: fail closed.
+        found = image.bias;
+    }
+    return found;
+}
+}
+
+uint32_t FindSoberPid() {
+    DIR* directory = opendir("/proc");
+    if (!directory) return 0;
+    uint32_t found = 0;
+    while (auto* entry = readdir(directory)) {
+        char* end = nullptr;
+        unsigned long value = std::strtoul(entry->d_name, &end, 10);
+        if (*end || !value || value > UINT32_MAX) continue;
+        const auto pid = static_cast<uint32_t>(value);
+        struct stat st{};
+        const auto root = "/proc/" + std::to_string(pid);
+        if (stat(root.c_str(), &st) || st.st_uid != getuid()) continue;
+        // Start-time snapshots prevent accepting an exited/reused process.
+        auto start = ProcessStartTicks(pid);
+        auto regions = MapRegions(pid);
+        if (!VerifiedBase(pid, regions) || start.empty() || start != ProcessStartTicks(pid)) continue;
+        if (found && found != pid) { found = 0; break; }
+        found = pid;
+    }
+    closedir(directory);
+    return found;
+}
+
+uintptr_t LibRobloxBase(uint32_t pid, bool* denied_out) {
+    auto start = ProcessStartTicks(pid);
+    auto regions = MapRegions(pid, denied_out);
+    auto base = VerifiedBase(pid, regions);
+    return !start.empty() && start == ProcessStartTicks(pid) ? base : 0;
+}
+
+std::string ProcessStartTicks(uint32_t pid) {
+    std::ifstream file("/proc/" + std::to_string(pid) + "/stat");
+    std::string line; std::getline(file, line);
+    auto close = line.rfind(')');
+    if (close == std::string::npos) return {};
+    std::istringstream fields(line.substr(close + 1));
+    std::string value;
+    for (int field = 3; field <= 22; ++field) if (!(fields >> value)) return {};
+    return value;
+}
+
+// ---------------------------------------------------------------- InReadableRegion
+
+bool InReadableRegion(uintptr_t addr, const std::vector<MapRegion>& regions) {
+    for (auto& r : regions) {
+        if (addr >= r.start && addr < r.end) {
+            return !r.perms.empty() && r.perms[0] == 'r';
+        }
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------- TryPooledString — stub for now
+
+std::string TryPooledString(void* /*platform_handle*/, uintptr_t /*container*/) {
+    // Pooled string decode needs StringPool base from Sig1 neighbourhood.
+    // Until Sig1 is proven we cannot decode pool — caller falls back to std::string.
+    return {};
+}
+
+// ---------------------------------------------------------------- Scan — P0+ heuristic
+
+ScanResult Scan(void*, uint32_t pid, uintptr_t libBase) {
+    ScanResult result;
+    result.diag = "scan: verified ELF attachment pid=" + std::to_string(pid) +
+                  "; no validated Linux object-layout resolver for this image. "
+                  "Windows/static anchor fallback disabled.";
+    if (!pid || !libBase) result.diag = "scan: no verified Linux attachment";
+    return result;
+}
+
+} // namespace sober
+
+#else // !__linux__
+
+namespace sober {
+uint32_t FindSoberPid() { return 0; }
+uintptr_t LibRobloxBase(uint32_t, bool*) { return 0; }
+std::string ProcessStartTicks(uint32_t) { return {}; }
+std::vector<MapRegion> MapRegions(uint32_t, bool*) { return {}; }
+ScanResult Scan(void*, uint32_t, uintptr_t) { return {}; }
+std::string TryPooledString(void*, uintptr_t) { return {}; }
+bool InReadableRegion(uintptr_t, const std::vector<MapRegion>&) { return false; }
+}
+
+#endif
+SOBER_SOURCE_0_END
+mkdir -p "$WORK/roblox_external/platform"
+cat > "$WORK/roblox_external/platform/sober_scanner.h" <<'SOBER_SOURCE_1_END'
+#pragma once
+// ----------------------------------------------------------------------------
+//  platform/sober_scanner.h — PID-local offset discovery for Sober
+// ----------------------------------------------------------------------------
+//  Linux attachment is independently ELF-identified. Object-layout discovery
+//  deliberately fails closed until a validated resolver exists for the image.
+//  No Windows/static anchor fallback. See docs/LINUX_ATTACH_DIAGNOSTIC.md.
+// ----------------------------------------------------------------------------
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace sober {
+
+// Each field is an absolute address in the target process after Scan().
+// taskScheduler is the instance (not the pointer-to-pointer) — i.e. what
+// TaskScheduler::Pointer in offsets.h pointed at, resolved via Lea scan.
+struct ScanResult {
+    uintptr_t taskScheduler = 0;
+    uintptr_t renderJob     = 0;
+    uintptr_t dataModel     = 0;
+    uintptr_t visualEngine  = 0;
+    uintptr_t workspace     = 0;
+    uintptr_t world         = 0;
+    uintptr_t primitives    = 0;
+
+    // Derived: Primitive::* kept for mover::LayoutSane(). Filled after scan
+    // by offsets_dynamic::PatchFromScan() if the chain resolved.
+    uintptr_t primitiveRotation = 0;
+    uintptr_t primitiveFlags    = 0;
+    uintptr_t primitivePosition = 0;
+
+    // Human-readable trace — shown on the debug page, photographed for
+    // operator receipts. Never empty on failure.
+    std::string diag;
+
+    bool ok() const { return taskScheduler && dataModel && workspace; }
+};
+
+// One /proc region — parsed from /proc/<pid>/maps. Used to filter
+// readable code vs heap vs guard pages before scanning.
+struct MapRegion {
+    uintptr_t start = 0;
+    uintptr_t end = 0;
+    uintptr_t offset = 0;
+    std::string perms; // e.g. "r-xp", "rw-p", "r--p"
+    std::string path;  // may be empty for anon
+};
+
+// ---- PID discovery --------------------------------------------------------
+// Unique same-user process containing an ELF self-identifying as libroblox.so.
+// Reads file/memfd ELF headers; no name scoring or Windows/Wine fallback.
+uint32_t FindSoberPid();
+std::string ProcessStartTicks(uint32_t pid);
+
+// Verified ELF load bias, not the executable segment start. 0 on missing,
+// ambiguous, unreadable or changed process. denied_out reports maps denial.
+uintptr_t LibRobloxBase(uint32_t pid, bool* denied_out = nullptr);
+
+// Enumerate /proc/<pid>/maps into regions (perms + path preserved).
+// Returns empty on failure. If errno-style feedback is needed, pass a
+// non-null denied_out — it is set to true when the maps file could not be
+// opened for permission reasons (EACCES/EPERM = yama ptrace_scope blocking
+// PTRACE_MODE_READ_ATTACH; ENOENT/ESRCH = pid gone), false on success or
+// an unclassifiable IO error.
+std::vector<MapRegion> MapRegions(uint32_t pid, bool* denied_out = nullptr);
+
+// Full scan — the only call offsets_dynamic needs. Reads are via
+// platform::ReadMemory(pid token, ...) — caller opens the pid once
+// and passes the platform handle. This function does not open handles
+// itself (keeps /proc permission errors in one place).
+ScanResult Scan(void* platform_handle, uint32_t pid, uintptr_t libBase);
+
+// Sober string pooling — mirrors UnknownCheats pooling section.
+// Returns empty if not a pooled handle (caller falls back to std::string).
+std::string TryPooledString(void* platform_handle, uintptr_t container);
+
+// Utility: validate that an address lies inside a readable rw-p region
+// (cheap sanity before dereferencing a job pointer).
+bool InReadableRegion(uintptr_t addr, const std::vector<MapRegion>& regions);
+
+} // namespace sober
+SOBER_SOURCE_1_END
+mkdir -p "$WORK/roblox_external/platform"
+cat > "$WORK/roblox_external/platform/platform_linux.cpp" <<'SOBER_SOURCE_2_END'
+// -----------------------------------------------------------------------------
+//  platform/platform_linux.cpp  --  the Linux implementation of platform.h
+// -----------------------------------------------------------------------------
+//  NOT part of the Windows build (it is not in the vcxproj). It is the
+//  starting point for a Linux port, and it COMPILES as-is with:
+//
+//      g++ -std=c++17 -fsyntax-only -Wall roblox_external/platform/platform_linux.cpp
+//
+//  What works today, and what a real port still has to decide:
+//
+//  * memory: process_vm_readv/process_vm_writev over the pid - the honest
+//    Linux equivalent of NtRead/NtWriteVirtualMemory, and the reason the
+//    platform handle is a heap-allocated pid token rather than an OS handle.
+//  * process finding: /proc/*/comm scan. NOTE: the Windows client runs under
+//    Wine as "RobloxPlayerBeta.exe" in comm (truncated to 15 chars by the
+//    kernel), so the match is on that prefix; a native Linux client would
+//    need its own name here.
+//  * base address: first mapping of /proc/<pid>/maps, which is the main
+//    executable's load address - same job the PEB read does on Windows.
+//  * clock/threads/exe-dir/curl: clock_gettime, pthreads, /proc/self/exe -
+//    complete, no decisions left.
+//  * window rects + cursor + overlay window control (P3): the x11overlay
+//    layer in this file, compiled when CMake finds X11 and defines HAS_X11
+//    (HAS_XFIXES additionally enables the XFixes click-through input shape).
+//    GameClientRect is an EWMH lookup: _NET_WM_PID match on the pid the
+//    attach path stored via SetGamePid, title match fallback. The overlay
+//    uses the same layer for dock hints, click-through and the root-grabbed
+//    HOME/F8 hotkey (overlay_x11.h).
+//  * honest gaps, returning failure instead of pretending:
+//      - AllocMem/FreeMem: no remote allocator over /proc. The skybox changer
+//        (the only AllocMem user) would need ptrace or a different approach.
+//      - SampleKey/IsKeyDown/KeyPressed, mouse output (aimbot's MoveMouseRelative
+//        and ClickMouseLeft): these need XTest/libXtst or uinput - still stubs.
+//      - Wayland-native (no XWayland): none of the x11overlay layer works; the
+//        windowed menu keeps working, click-through does not. Sober runs under
+//        XWayland, so this is the corner, not the target.
+// -----------------------------------------------------------------------------
+#include "platform.h"
+#include "sober_scanner.h"
+#include "overlay_x11.h"
+
+#if defined(HAS_X11)
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#include <X11/Xutil.h>
+#include <X11/keysym.h>
+#if defined(HAS_XFIXES)
+#include <X11/extensions/Xfixes.h>
+#endif
+#endif
+
+#include <dirent.h>
+#include <pthread.h>
+#include <sched.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <new>
+#include <cstdlib>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace platform {
+namespace {
+
+// The platform "handle": the Windows API hands out an OS HANDLE; Linux memory
+// syscalls take the pid every call, so the token just carries it.
+struct GameHandle { uint32_t pid; std::string start; };
+
+std::string ReadFirstLine(const char* path)
+{
+    FILE* f = fopen(path, "r");
+    if (!f) return std::string();
+    char buf[512] = {};
+    const char* got = fgets(buf, sizeof(buf), f);
+    fclose(f);
+    return got ? std::string(buf) : std::string();
+}
+
+struct Thunk { void (*fn)(void*); void* arg; };
+
+void* PthreadTrampoline(void* p)
+{
+    Thunk* t = static_cast<Thunk*>(p);
+    t->fn(t->arg);
+    delete t;
+    return nullptr;
+}
+
+} // namespace
+
+bool Init()
+{
+    // No syscall layer to set up on Linux - the memory calls are plain
+    // process_vm_readv/writev. XInitThreads must be the first Xlib call of
+    // the process when several threads share Xlib (the x11overlay control
+    // connection is used from the overlay thread and from feature threads
+    // through GameClientRect); SDL's own connection comes later.
+#if defined(HAS_X11)
+    XInitThreads();
+#endif
+    return true;
+}
+
+// ---- process + memory --------------------------------------------------------
+
+uint32_t FindGameProcess()
+{
+    return sober::FindSoberPid();
+}
+
+uintptr_t GameBaseAddress(uint32_t pid)
+{
+    return sober::LibRobloxBase(pid);
+}
+
+bool OpenGameHandle(uint32_t pid, void** out)
+{
+    if (!out) return false;
+    *out = nullptr;
+    const auto start = sober::ProcessStartTicks(pid);
+    // Unlike a PID token allocation, verified ELF reads prove read permission.
+    if (start.empty() || !sober::LibRobloxBase(pid) || start != sober::ProcessStartTicks(pid)) return false;
+    *out = new (std::nothrow) GameHandle{pid, start};
+    return *out != nullptr;
+}
+
+void CloseHandle(void* h)
+{
+    delete static_cast<GameHandle*>(h);
+}
+
+bool ProcessAlive(void* process_h)
+{
+    const GameHandle* g = static_cast<GameHandle*>(process_h);
+    if (!g) return false;
+    return !g->start.empty() && sober::ProcessStartTicks(g->pid) == g->start;
+}
+
+bool ReadMem(void* h, uintptr_t addr, void* buf, size_t size)
+{
+    const GameHandle* g = static_cast<GameHandle*>(h);
+    if (!g) return false;
+    const iovec local{ buf, size };
+    const iovec remote{ (void*)addr, size };
+    return process_vm_readv((pid_t)g->pid, &local, 1, &remote, 1, 0) == (ssize_t)size;
+}
+
+bool WriteMem(void* h, uintptr_t addr, const void* buf, size_t size)
+{
+    const GameHandle* g = static_cast<GameHandle*>(h);
+    if (!g) return false;
+    const iovec local{ const_cast<void*>(buf), size };
+    const iovec remote{ (void*)addr, size };
+    return process_vm_writev((pid_t)g->pid, &local, 1, &remote, 1, 0) == (ssize_t)size;
+}
+
+bool AllocMem(void* h, size_t size, uintptr_t* out)
+{
+    // No remote allocator over /proc - see the header note. The skybox
+    // changer (the only caller) reports the failure and skips.
+    (void)h; (void)size; (void)out;
+    return false;
+}
+
+void FreeMem(void* h, uintptr_t base)
+{
+    (void)h; (void)base;    // paired with the AllocMem that never succeeds
+}
+
+// ---- clock -------------------------------------------------------------------
+
+uint64_t NowMs()
+{
+    struct timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
+}
+
+uint64_t NowNs()
+{
+    struct timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+void SleepMs(uint32_t ms)
+{
+    struct timespec ts{};
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (long)(ms % 1000) * 1000000l;
+    nanosleep(&ts, nullptr);
+}
+
+// ---- input state (honest gap - see header) -----------------------------------
+
+KeyState SampleKey(int key) { (void)key; return KeyState{ false, false }; }
+bool IsKeyDown(int key)     { (void)key; return false; }
+bool KeyPressed(int key)    { (void)key; return false; }
+
+// ---- mouse output (honest gap - see header) ----------------------------------
+
+void MoveMouseRelative(int dx, int dy) { (void)dx; (void)dy; }
+void ClickMouseLeft()                  { }   // needs uinput/XTest - the port's job, not a guess
+void TapKey(int key)                   { (void)key; }
+bool GameWindowForeground()            { return x11overlay::ActiveWindowKind() == 'g'; }
+bool ForegroundIsGameOrUs()
+{
+    const char k = x11overlay::ActiveWindowKind();
+    return k == 'g' || k == 'u';   // unknown ('o'/0) keeps anti-AFK quiet
+}
+void SetMouseScreen(int x, int y)      { (void)x; (void)y; }
+int ScreenDpi()
+{
+    const int dpi = x11overlay::ScreenDpi();
+    return dpi > 0 ? dpi : 96;
+}
+
+// ---- screen / game window (EWMH via x11overlay) -----------------------------
+
+bool HasGraphicalDisplay()
+{
+    // SDL's video backends honour these same two variables; reading them here
+    // keeps getenv() in the one TU the repo's no-deprecated-crt check excludes.
+    const char* x11 = getenv("DISPLAY");
+    const char* wayland = getenv("WAYLAND_DISPLAY");
+    return (x11 && *x11) || (wayland && *wayland);
+}
+
+void SetGamePid(uint32_t pid) { x11overlay::SetGamePid(pid); }
+bool GameClientRect(int& x, int& y, int& w, int& h)
+{
+    return x11overlay::GameWindowRect(x, y, w, h);
+}
+bool CursorScreen(int& x, int& y) { return x11overlay::CursorScreen(x, y); }
+bool CursorClient(int& x, int& y)
+{
+    int gx = 0, gy = 0, gw = 0, gh = 0;
+    if (!x11overlay::GameWindowRect(gx, gy, gw, gh)) return false;
+    if (!x11overlay::CursorScreen(x, y)) return false;
+    x -= gx;
+    y -= gy;
+    return true;
+}
+
+// ---- threads -----------------------------------------------------------------
+
+bool StartThread(void (*fn)(void*), void* arg)
+{
+    pthread_t t{};
+    pthread_attr_t attr{};
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    Thunk* thunk = new (std::nothrow) Thunk{ fn, arg };
+    if (!thunk) { pthread_attr_destroy(&attr); return false; }
+    const bool ok = pthread_create(&t, &attr, PthreadTrampoline, thunk) == 0;
+    pthread_attr_destroy(&attr);
+    if (!ok) delete thunk;
+    return ok;
+}
+
+void* StartJoinableThread(void (*fn)(void*), void* arg)
+{
+    pthread_t* t = new (std::nothrow) pthread_t{};
+    Thunk* thunk = new (std::nothrow) Thunk{ fn, arg };
+    if (!t || !thunk) { delete t; delete thunk; return nullptr; }
+    if (pthread_create(t, nullptr, PthreadTrampoline, thunk) != 0) {
+        delete t; delete thunk;
+        return nullptr;
+    }
+    return t;
+}
+
+bool JoinThread(void* thread_h, uint32_t timeout_ms)
+{
+    pthread_t* t = static_cast<pthread_t*>(thread_h);
+    if (!t) return false;
+    struct timespec ts{};
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (long)(timeout_ms % 1000) * 1000000l;
+    if (ts.tv_nsec >= 1000000000l) { ts.tv_sec += 1; ts.tv_nsec -= 1000000000l; }
+    const bool exited = pthread_timedjoin_np(*t, nullptr, &ts) == 0;
+    delete t;
+    return exited;
+}
+
+void BoostThread()
+{
+    // Best effort: nicer than Windows' nothing, quieter than SCHED_FIFO.
+    sched_yield();
+}
+
+void YieldThread()
+{
+    sched_yield();
+}
+
+// ---- files / tools -----------------------------------------------------------
+
+std::string ExeDir()
+{
+    char buf[4096] = {};
+    const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return "./";
+    const std::string s(buf, (size_t)n);
+    const size_t slash = s.find_last_of('/');
+    if (slash == std::string::npos) return "./";
+    return s.substr(0, slash + 1);
+}
+
+std::string CurlPath()
+{
+    // The transport builds an argument list, so a PATH-resolvable name is
+    // what a posix fork/exec version of GetViaCurl wants.
+    return "curl";
+}
+
+namespace {
+
+bool HasExt(const char* name, const char* ext)
+{
+    const char* dot = nullptr;
+    for (const char* p = name; *p; ++p)
+        if (*p == '.') dot = p;
+    if (!dot) return false;
+    for (const char* a = dot + 1, *b = ext; ; ++a, ++b) {
+        char ca = (char)tolower((unsigned char)*a);
+        char cb = (char)tolower((unsigned char)*b);
+        if (!ca || !cb) return ca == cb;
+        if (ca != cb) return false;
+    }
+}
+
+} // namespace
+
+bool ListFilesWithExt(const char* dir, const char* ext, std::vector<std::string>& out)
+{
+    out.clear();
+    if (!dir || !dir[0] || !ext || !ext[0]) return false;
+    mkdir(dir, 0755);   // EEXIST is fine; a bad path fails below
+
+    DIR* d = opendir(dir);
+    if (!d) return false;
+    const std::string prefix = std::string(dir) + "/";
+    while (dirent* e = readdir(d)) {
+        if (e->d_name[0] == '.') continue;
+        if (!HasExt(e->d_name, ext)) continue;
+        struct stat st {};
+        if (stat((prefix + e->d_name).c_str(), &st) != 0) continue;
+        if (!S_ISREG(st.st_mode)) continue;
+        out.push_back(e->d_name);
+    }
+    closedir(d);
+    std::sort(out.begin(), out.end());
+    return true;
+}
+
+bool PlayWav(const char* path, float volume)
+{
+    (void)path;
+    (void)volume;
+    return false;   // no audio layer in the Linux starting point
+}
+
+bool OpenUrl(const char* url, std::string& err)
+{
+    err.clear();
+    if (!url || !url[0]) { err = "nothing to open"; return false; }
+    // xdg-open returns 0 for "handed off" - unlike ShellExecute there is no
+    // "nothing registered" distinction, just the exit code.
+    const std::string cmd = std::string("xdg-open '") + url + "' >/dev/null 2>&1";
+    if (system(cmd.c_str()) == 0) return true;
+    err = "xdg-open could not hand off the link - the link is:\n" + std::string(url);
+    return false;
+}
+
+} // namespace platform
+
+// =============================================================================
+//  x11overlay — EWMH game rect, XFixes click-through, root-grabbed hotkeys
+//  (overlay_x11.h). Compiled only with HAS_X11; stubs otherwise so every
+//  headless binary (sober_probe, CI parses) links unchanged.
+// =============================================================================
+
+#if defined(HAS_X11)
+
+namespace x11overlay {
+namespace {
+
+std::mutex      g_ctl_mutex;
+Display*        g_ctl = nullptr;      // control connection (overlay + feature threads)
+Window          g_self = 0;           // our overlay window
+int             g_depth = 0;
+uint32_t        g_game_pid = 0;
+bool            g_click_through = false;
+bool            g_hotkeys = false;
+bool            g_have_xfixes = false;
+void          (*g_toggle_cb)() = nullptr;
+char            g_status[256] = "x11: not initialised";
+
+// Xlib's default error handler prints and EXITS the process on BadWindow -
+// fatal when a window dies between our query and the read (game closing,
+// overlay resize). Every call in this layer is best-effort.
+int IgnoreXError(Display*, XErrorEvent*) { return 0; }
+
+uint64_t NowMonoMs()
+{
+    struct timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
+}
+
+// Caller holds g_ctl_mutex.
+Display* Ctl()
+{
+    if (!g_ctl) {
+        g_ctl = XOpenDisplay(nullptr);
+        if (g_ctl) XSetErrorHandler(IgnoreXError);
+    }
+    return g_ctl;
+}
+
+// Format-32 properties come back as arrays of long (32 bits per slot, even on
+// LP64) - _NET_CLIENT_LIST, _NET_WM_PID, _NET_ACTIVE_WINDOW all use this.
+bool ReadProp32(Display* d, Window w, Atom atom, std::vector<unsigned long>& out)
+{
+    out.clear();
+    if (atom == None) return false;
+    Atom type = 0;
+    int fmt = 0;
+    unsigned long nitems = 0, bytes_after = 0;
+    unsigned char* prop = nullptr;
+    if (XGetWindowProperty(d, w, atom, 0, 1024, False, AnyPropertyType,
+                           &type, &fmt, &nitems, &bytes_after, &prop) != Success || !prop)
+        return false;
+    const bool ok = (fmt == 32);
+    if (ok) {
+        const unsigned long* vals = reinterpret_cast<const unsigned long*>(prop);
+        out.assign(vals, vals + nitems);
+    }
+    XFree(prop);
+    return ok;
+}
+
+std::string ReadPropString(Display* d, Window w, Atom atom)
+{
+    if (atom == None) return {};
+    Atom type = 0;
+    int fmt = 0;
+    unsigned long nitems = 0, bytes_after = 0;
+    unsigned char* prop = nullptr;
+    if (XGetWindowProperty(d, w, atom, 0, 1024, False, AnyPropertyType,
+                           &type, &fmt, &nitems, &bytes_after, &prop) != Success || !prop)
+        return {};
+    std::string s(reinterpret_cast<const char*>(prop), nitems);
+    XFree(prop);
+    return s;
+}
+
+std::vector<Window> TopLevelWindows(Display* d, Window root)
+{
+    std::vector<Window> out;
+    Atom list = XInternAtom(d, "_NET_CLIENT_LIST", True);
+    std::vector<unsigned long> v;
+    if (ReadProp32(d, root, list, v) && !v.empty()) {
+        for (unsigned long x : v) out.push_back((Window)x);
+        return out;
+    }
+    Window r = 0, parent = 0, *children = nullptr;
+    unsigned n = 0;
+    if (XQueryTree(d, root, &r, &parent, &children, &n)) {
+        for (unsigned i = 0; i < n; ++i) out.push_back(children[i]);
+        if (children) XFree(children);
+    }
+    return out;
+}
+
+bool WindowUsable(Display* d, Window w)
+{
+    XWindowAttributes wa{};
+    return XGetWindowAttributes(d, w, &wa) && wa.map_state == IsViewable &&
+           wa.width >= 2 && wa.height >= 2;
+}
+
+std::string WindowTitle(Display* d, Window w)
+{
+    Atom net_name = XInternAtom(d, "_NET_WM_NAME", True);
+    std::string t = ReadPropString(d, w, net_name);
+    if (t.empty()) t = ReadPropString(d, w, XA_WM_NAME);
+    return t;
+}
+
+bool TitleIsGame(const std::string& t)
+{
+    std::string l;
+    l.reserve(t.size());
+    for (char c : t) l.push_back((char)tolower((unsigned char)c));
+    return l.find("roblox") != std::string::npos ||
+           l.find("sober") != std::string::npos;
+}
+
+// Caller holds g_ctl_mutex.
+Window FindGameWindow(Display* d, Window root, uint32_t pid)
+{
+    const std::vector<Window> wins = TopLevelWindows(d, root);
+    if (pid) {
+        Atom wm_pid = XInternAtom(d, "_NET_WM_PID", True);
+        for (Window w : wins) {
+            std::vector<unsigned long> v;
+            if (ReadProp32(d, w, wm_pid, v) && !v.empty() && (uint32_t)v[0] == pid)
+                return w;
+        }
+    }
+    for (Window w : wins) {
+        if (!WindowUsable(d, w)) continue;
+        if (TitleIsGame(WindowTitle(d, w))) return w;
+    }
+    return None;
+}
+
+void* HotkeyThread(void*)
+{
+    // Own Display connection: SDL owns its own, and a passive grab delivers to
+    // the grabbing connection. Root is an ancestor of every focus window, so
+    // the grab fires no matter who has focus - including our menu, and
+    // including the game when the overlay is click-through.
+    Display* d = XOpenDisplay(nullptr);
+    if (!d) return nullptr;
+    XSetErrorHandler(IgnoreXError);
+    const Window root = DefaultRootWindow(d);
+    const KeyCode k_home = XKeysymToKeycode(d, XK_Home);
+    const KeyCode k_f8 = XKeysymToKeycode(d, XK_F8);
+    XGrabKey(d, k_home, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(d, k_f8, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
+    XSync(d, False);
+    uint64_t last = 0;
+    for (;;) {
+        XEvent ev;
+        XNextEvent(d, &ev);
+        if (ev.type != KeyPress || !g_toggle_cb) continue;
+        const uint64_t now = NowMonoMs();
+        if (now - last < 250) continue;   // auto-repeat + dual delivery debounce
+        last = now;
+        g_toggle_cb();
+    }
+    return nullptr;
+}
+
+} // namespace
+
+bool Available()
+{
+    const char* disp = getenv("DISPLAY");
+    return disp && *disp;
+}
+
+void SetGamePid(uint32_t pid)
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    g_game_pid = pid;
+}
+
+bool AttachSelf(const char* wm_class)
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d || !wm_class || !wm_class[0]) return false;
+    const Window root = DefaultRootWindow(d);
+    Atom wclass = XInternAtom(d, "WM_CLASS", True);
+    for (Window w : TopLevelWindows(d, root)) {
+        std::string cls = ReadPropString(d, w, wclass);
+        if (cls.empty()) continue;
+        const size_t nul = cls.find('\0');
+        const std::string first = cls.substr(0, nul == std::string::npos ? cls.size() : nul);
+        bool match = first.size() == strlen(wm_class);
+        if (match)
+            for (size_t i = 0; i < first.size(); ++i)
+                if (tolower((unsigned char)first[i]) != tolower((unsigned char)wm_class[i])) {
+                    match = false;
+                    break;
+                }
+        if (!match) continue;
+        g_self = w;
+        XWindowAttributes wa{};
+        if (XGetWindowAttributes(d, g_self, &wa)) g_depth = wa.depth;
+        return true;
+    }
+    return false;
+}
+
+bool SetDockHints()
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d || !g_self) return false;
+    const Window root = DefaultRootWindow(d);
+    const Atom state = XInternAtom(d, "_NET_WM_STATE", False);
+    const Atom above = XInternAtom(d, "_NET_WM_STATE_ABOVE", False);
+    const Atom skip_task = XInternAtom(d, "_NET_WM_STATE_SKIP_TASKBAR", False);
+    const Atom skip_pager = XInternAtom(d, "_NET_WM_STATE_SKIP_PAGER", False);
+
+    XEvent ev{};
+    ev.xclient.type = ClientMessage;
+    ev.xclient.window = g_self;
+    ev.xclient.message_type = state;
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] = 1;                       // _NET_WM_STATE_ADD
+    ev.xclient.data.l[1] = (long)above;
+    ev.xclient.data.l[2] = (long)skip_task;
+    ev.xclient.data.l[3] = 1;                       // source: application
+    XSendEvent(d, root, False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+    ev.xclient.data.l[1] = (long)skip_pager;
+    ev.xclient.data.l[2] = 0;
+    XSendEvent(d, root, False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+
+    const Atom wtype = XInternAtom(d, "_NET_WM_WINDOW_TYPE", False);
+    const Atom utility = XInternAtom(d, "_NET_WM_WINDOW_TYPE_UTILITY", False);
+    XChangeProperty(d, g_self, wtype, XA_ATOM, 32, PropModeReplace,
+                    reinterpret_cast<const unsigned char*>(&utility), 1);
+    XFlush(d);
+    return true;
+}
+
+bool SetClickThrough(bool enable)
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+#if defined(HAS_XFIXES)
+    Display* d = Ctl();
+    if (!d || !g_self) return false;
+    int evb = 0, errb = 0;
+    if (!XFixesQueryExtension(d, &evb, &errb)) {
+        g_click_through = false;
+        return false;
+    }
+    // XFixesSetWindowShapeRegion with an empty region makes the input shape
+    // empty (clicks fall through); a full-window region restores normal input.
+    // Shape kind 2 == ShapeInput from <X11/extensions/shape.h> (libXext); the
+    // numeric value is protocol-stable and avoids a header dependency on Xext
+    // for one constant.
+    const int kShapeInput = 2;
+    if (enable) {
+        XserverRegion empty = XFixesCreateRegion(d, nullptr, 0);
+        XFixesSetWindowShapeRegion(d, g_self, kShapeInput, 0, 0, empty);
+        XFixesDestroyRegion(d, empty);
+    } else {
+        XWindowAttributes wa{};
+        if (!XGetWindowAttributes(d, g_self, &wa)) return false;
+        XRectangle r{};
+        r.width = (unsigned short)wa.width;
+        r.height = (unsigned short)wa.height;
+        XserverRegion full = XFixesCreateRegion(d, &r, 1);
+        XFixesSetWindowShapeRegion(d, g_self, kShapeInput, 0, 0, full);
+        XFixesDestroyRegion(d, full);
+    }
+    XFlush(d);
+    g_click_through = enable;
+    return true;
+#else
+    (void)enable;
+    return false;
+#endif
+}
+
+bool StartToggleHotkeys(void (*on_toggle)())
+{
+    {
+        std::lock_guard<std::mutex> lk(g_ctl_mutex);
+        if (g_hotkeys) return true;
+        g_toggle_cb = on_toggle;
+    }
+    pthread_t t{};
+    pthread_attr_t attr{};
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    const bool ok = pthread_create(&t, &attr, HotkeyThread, nullptr) == 0;
+    pthread_attr_destroy(&attr);
+    if (ok) {
+        std::lock_guard<std::mutex> lk(g_ctl_mutex);
+        g_hotkeys = true;
+    }
+    return ok;
+}
+
+int WindowDepth()
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    if (!g_self) return 0;
+    return g_depth;
+}
+
+bool ArgbVisualAvailable()
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d) return false;
+    XVisualInfo vi{};
+    return XMatchVisualInfo(d, DefaultScreen(d), 32, TrueColor, &vi) != 0;
+}
+
+bool GameWindowRect(int& x, int& y, int& w, int& h)
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d) return false;
+
+    static Window cached = None;
+    static uint64_t cached_at = 0;
+    static int rx = 0, ry = 0, rw = 0, rh = 0;
+    const uint64_t now = NowMonoMs();
+    if (cached != None && now - cached_at < 100) {
+        x = rx; y = ry; w = rw; h = rh;
+        return true;
+    }
+
+    const Window root = DefaultRootWindow(d);
+    const Window gw = FindGameWindow(d, root, g_game_pid);
+    if (gw == None) { cached = None; cached_at = now; return false; }
+
+    XWindowAttributes wa{};
+    if (!XGetWindowAttributes(d, gw, &wa) || wa.map_state != IsViewable ||
+        wa.width < 2 || wa.height < 2) {
+        cached = None;
+        cached_at = now;
+        return false;
+    }
+    Window child = 0;
+    int ax = 0, ay = 0;
+    if (!XTranslateCoordinates(d, gw, root, 0, 0, &ax, &ay, &child)) {
+        cached = None;
+        cached_at = now;
+        return false;
+    }
+    rx = ax; ry = ay; rw = wa.width; rh = wa.height;
+    cached = gw;
+    cached_at = now;
+    x = rx; y = ry; w = rw; h = rh;
+    return true;
+}
+
+char ActiveWindowKind()
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d) return 0;
+    const Window root = DefaultRootWindow(d);
+    Atom active = XInternAtom(d, "_NET_ACTIVE_WINDOW", True);
+    std::vector<unsigned long> v;
+    if (!ReadProp32(d, root, active, v) || v.empty()) return 0;
+    const Window aw = (Window)v[0];
+    if (!aw) return 0;
+    if (g_self && aw == g_self) return 'u';
+    if (g_game_pid) {
+        Atom wm_pid = XInternAtom(d, "_NET_WM_PID", True);
+        std::vector<unsigned long> pv;
+        if (ReadProp32(d, aw, wm_pid, pv) && !pv.empty() && (uint32_t)pv[0] == g_game_pid)
+            return 'g';
+    }
+    return TitleIsGame(WindowTitle(d, aw)) ? 'g' : 'o';
+}
+
+bool CursorScreen(int& x, int& y)
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d) return false;
+    const Window root = DefaultRootWindow(d);
+    Window r = 0, c = 0;
+    int rx = 0, ry = 0, wx = 0, wy = 0;
+    unsigned mask = 0;
+    if (!XQueryPointer(d, root, &r, &c, &rx, &ry, &wx, &wy, &mask)) return false;
+    x = rx;
+    y = ry;
+    return true;
+}
+
+int ScreenDpi()
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d) return 0;
+    const int scr = DefaultScreen(d);
+    const int wmm = DisplayWidthMM(d, scr);
+    if (wmm <= 0) return 0;
+    return (int)((double)DisplayWidth(d, scr) * 25.4 / (double)wmm + 0.5);
+}
+
+const char* StatusLine()
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    if (!Ctl()) {
+        snprintf(g_status, sizeof(g_status), "x11: no DISPLAY (headless or wayland-only)");
+        return g_status;
+    }
+    snprintf(g_status, sizeof(g_status),
+             "x11: window=%s depth=%d xfixes=%d click-through=%s hotkeys=%s pid=%u",
+             g_self ? "found" : "not found", g_depth,
+#if defined(HAS_XFIXES)
+             1,
+#else
+             0,
+#endif
+             g_click_through ? "on" : "off",
+             g_hotkeys ? "on" : "off",
+             g_game_pid);
+    return g_status;
+}
+
+} // namespace x11overlay
+
+#else // !HAS_X11
+
+namespace x11overlay {
+bool Available() { return false; }
+void SetGamePid(uint32_t) {}
+bool AttachSelf(const char*) { return false; }
+bool SetDockHints() { return false; }
+bool SetClickThrough(bool) { return false; }
+bool StartToggleHotkeys(void (*)()) { return false; }
+int WindowDepth() { return 0; }
+bool ArgbVisualAvailable() { return false; }
+bool GameWindowRect(int&, int&, int&, int&) { return false; }
+char ActiveWindowKind() { return 0; }
+bool CursorScreen(int&, int&) { return false; }
+int ScreenDpi() { return 0; }
+const char* StatusLine() { return "x11: not in build (cmake found no X11)"; }
+} // namespace x11overlay
+
+#endif // HAS_X11
+SOBER_SOURCE_2_END
+mkdir -p "$WORK/roblox_external/platform"
+cat > "$WORK/roblox_external/platform/main_linux.cpp" <<'SOBER_SOURCE_3_END'
+// ----------------------------------------------------------------------------
+//  platform/main_linux.cpp — Linux entry point (mirrors main.cpp WinMain)
+// ----------------------------------------------------------------------------
+//  Windows main.cpp is WinMain with DX11 overlay. Linux uses standard main()
+//  with platform_linux + sober_scanner + port_watcher plug-and-play.
+//  Feature code is shared; only attach/overlay differ.
+// ----------------------------------------------------------------------------
+#ifdef __linux__
+
+#include "platform/platform.h"
+#include "platform/sober_scanner.h"
+#include "platform/port_watcher.h"
+#include "offsets_dynamic.h"
+#include "offsets.h"
+#include "offsets_live.h"
+#include "memory.h"
+#include "roblox_process.h"
+#include "game.h"
+#include "cache.h"
+#include "globals.h"
+#include <cstring>
+
+#include "features/aimbot/aimbot.h"
+#include "features/triggerbot/triggerbot.h"
+#include "features/antiafk/antiafk.h"
+#include "features/gravity/gravity.h"
+#include "features/hipheight/hipheight.h"
+#include "features/nofall/nofall.h"
+#include "features/fling/fling.h"
+#include "features/fpscap/fps_cap.h"
+#include "features/jumppower/jumppower.h"
+#include "features/world/env.h"
+#include "features/explorer/explorer.h"
+#include "features/world/world_esp.h"
+#include "features/hitsound/hitsound.h"
+#include "features/esp/esp.h"
+#include "features/flight/flight.h"
+#include "features/noclip/noclip.h"
+#include "features/walkspeed/walkspeed.h"
+#include "features/click_teleport/click_teleport.h"
+#include "features/infinite_jump/infinite_jump.h"
+#include "features/fov_changer/fov_changer.h"
+#include "features/inventory_checker/inventory_checker.h"
+#include "features/skybox_changer/skybox_changer.h"
+#include "features/hitbox_expander/hitbox_expander.h"
+#include "features/servers/servers.h"
+#include "features/players/players.h"
+#include "features/freecam/freecam.h"
+#include "features/waypoints/waypoints.h"
+#include "features/movement/mover.h"
+
+#include <csignal>
+#include <cstdio>
+#include <fstream>
+#include <string>
+#include <atomic>
+
+void RenderMenu(); // defined in menu.cpp on Windows; stub on Linux headless
+void TickKeybinds();
+
+namespace overlay { void run(); void shutdown(); void render_ui(); }
+
+static std::atomic<bool> g_layout_ready{false};
+
+static void FeatureLoop() {
+    while (!g_request_exit) {
+        if (g_base_address && g_layout_ready.load()) {
+            features::mover::Tick();
+            if (aimbot_enabled) features::RunAimbot();
+            features::RunTriggerbot();
+            features::RunFlight();
+            features::RunGravity();
+            features::RunHipHeight();
+            features::RunNoFall();
+            features::RunFling();
+            features::RunFpsCap();
+            features::RunJumpPower();
+            features::worldenv::RunWorldEnv();
+            features::worldesp::RunWorldEsp();
+            features::RunAntiafk();
+            features::RunNoclip();
+            features::RunWalkspeed();
+            if (click_teleport_enabled) features::RunClickTeleport();
+            features::RunInfiniteJump();
+            features::RunFovChanger();
+            if (skybox_changer_enabled) features::RunSkyboxChanger();
+            features::RunSpectate();
+            features::explorer::Run();
+            features::RunFreecam();
+            features::TickTeleportHold();
+            features::servers::Tick();
+            if (hitbox_expander_enabled) features::RunHitboxExpander();
+        }
+        // Idle backoff: while detached every Run* above is skipped by the
+        // g_base_address gate, so a 1 ms tick only wakes the CPU ~1000x/s for
+        // nothing (the desktop lag reported on Void before Sober attaches).
+        // Attach is driven by AttachLoop at 2 Hz, so a 10 Hz tick here changes
+        // no attach latency. The ATTACHED cadence is deliberately untouched:
+        // the mover's ~600 writes/s depends on the 1 ms tick.
+        platform::SleepMs(g_base_address && g_layout_ready.load() ? 1 : 100);
+    }
+}
+
+static bool RobloxStillAlive() {
+    return platform::ProcessAlive(mem::roblox_h.load());
+}
+
+static void DetachRoblox() {
+    g_layout_ready.store(false);
+    features::ReleaseFpsCap();
+    features::ReleaseNoFall();
+    features::ReleaseFovChanger();
+    features::ReleaseFling();
+    features::ReleaseJumpPower();
+    features::worldenv::ReleaseWorldEnv();
+    features::worldesp::ReleaseWorldEsp();
+    clear_instance_caches();
+    g_base_address = 0;
+    mem::process_id.store(0);
+    platform::CloseHandle(mem::roblox_h.exchange(nullptr));
+    platform::SetGamePid(0);
+    g_memory.Handle = nullptr;
+    offsets_dynamic::Invalidate();
+}
+
+static void AttachLoop(void*) {
+    portwatch::ProcessWatcher watcher;
+    bool warned_handle = false;
+
+    while (!g_request_exit) {
+        if (g_base_address && !RobloxStillAlive()) {
+            LogLine("game closed - waiting for it to come back");
+            DetachRoblox();
+        }
+
+        // Plug-and-play: watcher polls FindSoberPid every tick and reports pid/base change.
+        // This enables "launch external before Sober, it auto-attaches" (Fleasion parity).
+        uint32_t new_pid = 0;
+        uintptr_t new_base = 0;
+        if (watcher.Tick(&new_pid, &new_base)) {
+            if (new_pid && new_base) {
+                LogLine("plug-and-play: sober detected pid %u base 0x%llx — attaching", new_pid, (unsigned long long)new_base);
+                if (g_base_address) DetachRoblox();
+                mem::process_id.store(new_pid);
+                if (mem::grabroblox_h()) {
+                    g_base_address = new_base;
+                    warned_handle = false;
+                    LogLine("attached - pid %u, base 0x%llx (via port_watcher)", new_pid, (unsigned long long)new_base);
+                    // Verify read by checking DataModel via scanner
+                    if (offsets_dynamic::Ensure()) {
+                        g_layout_ready.store(true);
+                        LogLine("plug-and-play: %s", offsets_dynamic::diag().c_str());
+                        LogLine("watcher: %s", watcher.DebugLine().c_str());
+                    } else {
+                        LogLine("memory attached; features disabled — %s", offsets_dynamic::diag().c_str());
+                    }
+                } else {
+                    if (!warned_handle) {
+                        LogLine("found the game but couldn't open a handle - yama ptrace_scope?");
+                        warned_handle = true;
+                    }
+                    mem::process_id.store(0);
+                }
+            } else if (!new_pid && g_base_address) {
+                LogLine("sober vanished (pid 0) — detaching");
+                DetachRoblox();
+            }
+        }
+
+        // Also watch for game server port change (teleport) when already attached
+        if (g_base_address) {
+            uint32_t oldp = 0, newp = 0;
+            if (watcher.GamePortChanged(&oldp, &newp)) {
+                LogLine("portwatch: game port %u -> %u (teleport/server hop) — invalidating world", oldp, newp);
+                g_layout_ready.store(false);
+                offsets_dynamic::Invalidate();
+                // InvalidateWorld is in cache, but we can just log; cache thread will resweep.
+            }
+        }
+
+        platform::SleepMs(500); // 2 Hz attach poll — heavier than Windows 1s due to plug-and-play want
+    }
+}
+
+// TickKeybinds/RenderMenu are provided by menu_linux.cpp (P3 wiring).
+// The former headless stubs here would duplicate those symbols at link time,
+// so they are intentionally omitted — menu_linux.cpp is the single definition.
+// (If you remove menu_linux.cpp from CORE_SOURCES, re-add a guarded stub here.)
+
+static void OnSigInt(int) { g_request_exit = true; }
+
+int main(int argc, char** argv) {
+    // --locked: the bootstrapper (boot/main_boot.cpp) launched us. From here
+    // the overlay lives ONLY over Sober: hidden without its window, geometry
+    // following it — never a free-floating desktop overlay.
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--locked") == 0) g_locked_to_sober = true;
+    }
+    fprintf(stdout, "roblox-external linux — plug-and-play + dynamic offset fetcher%s\n",
+            g_locked_to_sober ? " (--locked)" : "");
+    fflush(stdout);
+    platform::Init();
+    std::signal(SIGINT, OnSigInt);
+    std::signal(SIGTERM, OnSigInt);
+
+    LogLine("roblox-external linux — plug-and-play + dynamic offset fetcher");
+    if (g_locked_to_sober) {
+        LogLine("launched --locked by the bootstrapper — overlay shows only over Sober, streamproofing active");
+    } else {
+        LogLine("waiting for Sober... (launch via flatpak run org.vinegarhq.Sober or /opt/sober/sober)");
+    }
+
+    // Linux never falls back to Windows profiles or guessed static anchors.
+    // RefreshOffsets() is Windows-only network path; skip it on Linux to avoid curl dep.
+    // Instead, first attach will trigger offsets_dynamic::Ensure().
+
+    cache::StartThread();
+    platform::StartThread([](void*){ FeatureLoop(); }, nullptr);
+    platform::StartThread(AttachLoop, nullptr);
+
+    overlay::run(); // blocks until g_request_exit
+
+    features::ReleaseFpsCap();
+    features::ReleaseNoFall();
+    features::ReleaseJumpPower();
+    features::worldenv::ReleaseWorldEnv();
+    features::worldesp::ReleaseWorldEsp();
+    cache::StopThread();
+    overlay::shutdown();
+    LogLine("exit");
+    return 0;
+}
+
+#endif // __linux__
+SOBER_SOURCE_3_END
+mkdir -p "$WORK/roblox_external"
+cat > "$WORK/roblox_external/game.cpp" <<'SOBER_SOURCE_4_END'
+#include "game.h"
+#include "memory.h"
+#include "offsets.h"
+#include "cache.h"
+#ifdef __linux__
+#include "offsets_dynamic.h"
+#include "platform/sober_scanner.h"
+#include "platform/platform.h"
+#endif
+
+namespace game {
+    static instance ReadVisualEngine(uintptr_t base) {
+        instance ve = read<instance>(base + Offsets::VisualEngine::Pointer);
+        return ve;
+    }
+
+    instance ReadDatamodel(uintptr_t base) {
+#ifdef __linux__
+        // Linux (Sober): try PID-local scanner first — it resolves DataModel
+        // directly via TaskScheduler → RenderJob chain relative to libBase.
+        // The base is a verified ELF load bias, never a Windows PE base.
+        if (offsets_dynamic::Ensure()) {
+            uintptr_t dmAddr = offsets_dynamic::GetDataModel();
+            if (is_valid_address(dmAddr)) {
+                return instance{dmAddr};
+            }
+        }
+        // A verified Linux module does not validate Windows field offsets.
+        return instance{};
+#else
+        instance ve = ReadVisualEngine(base);
+        if (!ve.is_valid())
+            return instance{};
+
+        uintptr_t fakedm = read<uintptr_t>(ve.address + Offsets::VisualEngine::FakeDataModel);
+        if (!is_valid_address(fakedm))
+            return instance{};
+
+        instance dm = read<instance>(fakedm + Offsets::FakeDataModel::RealDataModel);
+        return dm;
+#endif
+    }
+
+    std::string GetGameName(uintptr_t base) {
+        instance dm = ReadDatamodel(base);
+        if (!dm.is_valid()) return "";
+        return dm.get_name();
+    }
+
+    uint64_t GetPlaceId(uintptr_t base) {
+        instance dm = ReadDatamodel(base);
+        if (!dm.is_valid()) return 0;
+        return read<uint64_t>(dm.address + Offsets::DataModel::PlaceId);
+    }
+}
+SOBER_SOURCE_4_END
+mkdir -p "$WORK/roblox_external"
+cat > "$WORK/roblox_external/menu_linux.cpp" <<'SOBER_SOURCE_5_END'
+// ----------------------------------------------------------------------------
+//  menu_linux.cpp — Linux glue for the menu (no Windows.h)
+// ----------------------------------------------------------------------------
+//  Mirrors menu.cpp but for the Linux overlay. Layout still lives in
+//  ui/menu_ui.cpp (platform-free). This file provides:
+//   * KeyName / PollKey via VK codes + platform::SampleKey
+//   * OSName via /etc/os-release
+//   * FillSnapshot / FillPlayers / RunTest (same as Windows, memory reads
+//     are OS-agnostic)
+//   * MakeActions / RenderMenu / TickKeybinds
+// ----------------------------------------------------------------------------
+#ifdef __linux__
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstdarg>
+#include <cstring>
+#include <string>
+#include <vector>
+#include <mutex>
+#include <fstream>
+
+#include "imgui/imgui.h"
+#include "obsidian/obsidian.h"
+
+#include "globals.h"
+#include "memory.h"
+#include "game.h"
+#include "cache.h"
+#include "features/movement/mover.h"
+#include "features/explorer/explorer.h"
+#include "offsets.h"
+#include "offsets_live.h"
+#include "features/skybox_changer/skybox_changer.h"
+#include "features/players/friends.h"
+#include "features/hitsound/hitsound.h"
+#include "features/aimbot/aimbot.h"
+#include "features/players/players.h"
+#include "features/waypoints/waypoints.h"
+#include "features/config/config.h"
+#include "features/servers/servers.h"
+#include "ui/menu_ui.h"
+#include "platform/platform.h"
+#include "platform/streamproof_watcher.h"
+#include "offsets_dynamic.h"
+
+// overlay_linux.cpp — status line for the debug page (click-through / game rect)
+namespace overlay { const char* OverlayStatus(); }
+
+namespace obs = obsidian;
+
+namespace {
+
+// ----------------------------------------------------------------------------
+//  key names
+// ----------------------------------------------------------------------------
+const char* KeyName(int key) {
+    if (key == 0) return "unbound";
+    if (key == platform::key::LBUTTON) return "mouse 1";
+    if (key == platform::key::RBUTTON) return "mouse 2";
+    if (key == platform::key::MBUTTON) return "mouse 3";
+    if (key == platform::key::MOUSE_X1) return "mouse 4";
+    if (key == platform::key::MOUSE_X2) return "mouse 5";
+    // Simple static table for common keys
+    static char buf[32];
+    switch (key) {
+        case platform::key::SPACE: return "space";
+        case platform::key::ESCAPE: return "escape";
+        case platform::key::TAB: return "tab";
+        case platform::key::RETURN: return "enter";
+        case platform::key::SHIFT: return "shift";
+        case platform::key::CONTROL: return "ctrl";
+        case platform::key::LSHIFT: return "left shift";
+        case platform::key::RSHIFT: return "right shift";
+        case platform::key::LCONTROL: return "left ctrl";
+        case platform::key::RCONTROL: return "right ctrl";
+        case platform::key::LEFT: return "left";
+        case platform::key::RIGHT: return "right";
+        case platform::key::UP: return "up";
+        case platform::key::DOWN: return "down";
+        case platform::key::BACK: return "backspace";
+        case platform::key::DEL: return "delete";
+        default: break;
+    }
+    if (key >= 'A' && key <= 'Z') {
+        buf[0] = (char)key; buf[0] = (char)(buf[0] + 32); buf[1]=0; return buf;
+    }
+    if (key >= '0' && key <= '9') { buf[0]=(char)key; buf[1]=0; return buf; }
+    snprintf(buf, sizeof(buf), "key %d", key);
+    return buf;
+}
+
+int PollKey() {
+    // Linux: poll via platform::SampleKey. De-bounce by waiting for release.
+    for (int vk = 1; vk < 256; ++vk) {
+        if (vk == platform::key::LBUTTON || vk == platform::key::RBUTTON || vk == platform::key::MBUTTON ||
+            vk == platform::key::MOUSE_X1 || vk == platform::key::MOUSE_X2 || vk == platform::key::ESCAPE)
+            continue;
+        auto ks = platform::SampleKey(vk);
+        if (ks.down) {
+            // wait for release
+            for (int w=0; w<2000; ++w) {
+                platform::SleepMs(1);
+                if (!platform::SampleKey(vk).down) break;
+            }
+            return vk;
+        }
+    }
+    static const int buttons[5] = { platform::key::LBUTTON, platform::key::RBUTTON, platform::key::MBUTTON,
+                                    platform::key::MOUSE_X1, platform::key::MOUSE_X2 };
+    for (int i = 0; i < 5; ++i) {
+        if (platform::SampleKey(buttons[i]).down) {
+            for (int w=0; w<1000; ++w) {
+                platform::SleepMs(1);
+                if (!platform::SampleKey(buttons[i]).down) break;
+            }
+            return buttons[i];
+        }
+    }
+    return 0;
+}
+
+// ----------------------------------------------------------------------------
+//  what we are running on
+// ----------------------------------------------------------------------------
+const char* OSName()
+{
+    static char buf[64];
+    if (buf[0]) return buf;
+    std::ifstream f("/etc/os-release");
+    std::string pretty;
+    if (f) {
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.rfind("PRETTY_NAME=",0)==0) {
+                size_t q1 = line.find('"');
+                size_t q2 = line.rfind('"');
+                if (q1!=std::string::npos && q2!=std::string::npos && q2>q1) pretty=line.substr(q1+1,q2-q1-1);
+                else pretty=line.substr(12);
+                break;
+            }
+        }
+    }
+    if (pretty.empty()) {
+        // fallback: /etc/lsb-release or uname
+        std::ifstream f2("/etc/lsb-release");
+        if (f2) pretty="Linux";
+        else pretty="Void Linux";
+    }
+    snprintf(buf, sizeof(buf), "%s", pretty.c_str());
+    return buf;
+}
+
+// ----------------------------------------------------------------------------
+//  snapshot plumbing
+// ----------------------------------------------------------------------------
+menuui::Snapshot g_snap;
+
+void Row(std::vector<menuui::Snapshot::Row>& v, const char* key, int state,
+         const char* fmt, ...) {
+    if (v.size() >= 14) return;
+    menuui::Snapshot::Row r;
+    r.key = key;
+    r.state = state;
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(r.value, sizeof(r.value), fmt, ap);
+    va_end(ap);
+    v.push_back(r);
+}
+
+// ----------------------------------------------------------------------------
+//  the players tab's list
+// ----------------------------------------------------------------------------
+void FillPlayers(menuui::Snapshot& s, const cache::LocalPlayerData& lp)
+{
+    s.player_count = 0;
+    s.spectating   = spectate_enabled;
+    s.player_note[0] = '\0';
+
+    if (players_status_msg[0])
+        snprintf(s.player_note, sizeof(s.player_note), "%s", players_status_msg);
+
+    const cache::EspSnapshot ents = cache::GetEspSnapshot();
+    if (!ents || ents->empty()) {
+        if (!s.player_note[0])
+            snprintf(s.player_note, sizeof(s.player_note), "%s",
+                     s.attached && !s.in_game
+                         ? "There is no server to list on the Roblox home page. Join an "
+                           "experience and the rows appear here."
+                         : "No other players resolved yet. The cache fills itself a few "
+                           "seconds after a character spawns.");
+        return;
+    }
+
+    struct Hit { float dist; const cache::EspEntity* e; };
+    Hit hits[128];
+    int n = 0;
+    for (const cache::EspEntity& e : *ents) {
+        if (n >= (int)(sizeof(hits) / sizeof(hits[0]))) break;
+        const float dx = e.root_x - lp.x, dy = e.root_y - lp.y, dz = e.root_z - lp.z;
+        hits[n].dist = lp.valid ? sqrtf(dx * dx + dy * dy + dz * dz) : 0.0f;
+        hits[n].e = &e;
+        ++n;
+    }
+    std::sort(hits, hits + n, [](const Hit& a, const Hit& b) { return a.dist < b.dist; });
+
+    for (int i = 0; i < n && s.player_count < menuui::Snapshot::kMaxPlayers; ++i) {
+        const cache::EspEntity& e = *hits[i].e;
+        menuui::Snapshot::PlayerRow& r = s.players[s.player_count];
+
+        const char* nm = e.display_name[0] ? e.display_name : e.name;
+        snprintf(r.name, sizeof(r.name), "%s", (nm && nm[0]) ? nm : "unknown");
+        snprintf(r.account, sizeof(r.account), "%s", e.name[0] ? e.name : r.name);
+        r.user_id = e.user_id;
+        r.friended = features::friends::IsFriend(e.user_id);
+
+        if (e.IsDead()) {
+            snprintf(r.detail, sizeof(r.detail), "dead - %.0f studs", hits[i].dist);
+            r.state = 1;
+        } else {
+            snprintf(r.detail, sizeof(r.detail), "%.0f/%.0f hp - %.0f studs",
+                     e.health, e.max_health > 0.0f ? e.max_health : 100.0f, hits[i].dist);
+            if (e.tool_name[0]) {
+                const size_t len = strlen(r.detail);
+                snprintf(r.detail + len, sizeof(r.detail) - len, " - %s", e.tool_name);
+            }
+            r.state = 0;
+        }
+        if (spectate_enabled && e.user_id == spectate_user_id) r.state = 2;
+        ++s.player_count;
+    }
+}
+
+void FillSnapshot() {
+    menuui::Snapshot& s = g_snap;
+
+    s.runtime.clear();
+    s.camera.clear();
+
+    const bool attached = (g_base_address != 0 && offsets_dynamic::GetScanResult().ok());
+    s.attached = attached;
+    s.aimbot_latched = features::AimbotKeyLatched();
+
+    const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
+    s.user[0] = '\0';
+    if (lp.name[0]) snprintf(s.user, sizeof(s.user), "%s", lp.name);
+    s.pid = (unsigned)mem::process_id.load();
+    snprintf(s.os, sizeof(s.os), "%s", OSName());
+
+    // The two things a Linux report needs first: what the hook side (PID
+    // finder + dynamic offsets) resolved, and what the overlay side (game
+    // rect, click-through) is doing. Shown even while detached, because
+    // "waiting for Sober" is exactly when the scan diag matters.
+    {
+        const bool scanned = offsets_dynamic::GetScanResult().ok();
+        Row(s.runtime, "sober scan", scanned ? 1 : (attached ? 2 : 0),
+            "%.*s", 88, offsets_dynamic::diag().c_str());
+        Row(s.runtime, "overlay", 0, "%.*s", 88, overlay::OverlayStatus());
+        Row(s.runtime, "streamproof", streamproof_enabled ? 1 : 2,
+            streamproof_enabled ? "on — overlay hides while a capture app runs (now: %s)" : "off",
+            streamproof_enabled
+                ? (streamproof::CapturerName()[0] ? streamproof::CapturerName() : "none")
+                : "");
+        Row(s.runtime, "lock", g_locked_to_sober ? 1 : 0,
+            g_locked_to_sober ? "locked to Sober (bootstrapper-managed)" : "standalone launch");
+    }
+
+    if (!attached) {
+        snprintf(s.status, sizeof(s.status), "%s", g_base_address ? "memory attached; Linux layout unvalidated" : "waiting for roblox");
+        s.servers_busy = false;
+        s.servers_can_rejoin = false;
+        s.server_count = 0;
+        s.server_current = -1;
+        s.server_age_sec = -1;
+        s.game[0] = '\0';
+        s.place[0] = '\0';
+        s.servers_msg[0] = '\0';
+        s.in_game = false;
+        s.can_test = false;
+        return;
+    }
+    snprintf(s.status, sizeof(s.status), "%s", s.user[0] ? "attached" : "attaching");
+
+    s.hitsound_names = features::hitsound::SoundNames();
+    s.hitsound_count = features::hitsound::SoundCount();
+
+    s.skybox_names = features::k_skybox_names;
+    s.skybox_count = features::k_skybox_count;
+    snprintf(s.skybox_note, sizeof(s.skybox_note), "%s",
+             skybox_debug_msg[0] ? skybox_debug_msg : "Nothing applied yet");
+
+    features::servers::View sv;
+    features::servers::SnapshotInto(sv);
+
+    instance dm = game::ReadDatamodel(g_base_address);
+    if (dm.is_valid()) {
+        snprintf(s.game, sizeof(s.game), "%s", sv.place_name);
+        const uint64_t place_id = read<uint64_t>(dm.address + Offsets::DataModel::PlaceId);
+        const bool loaded = read<bool>(dm.address + Offsets::DataModel::GameLoaded);
+        snprintf(s.place, sizeof(s.place), "%llu", (unsigned long long)place_id);
+        s.in_game = loaded && place_id != 0;
+        if (!s.in_game)
+            snprintf(s.game, sizeof(s.game), "roblox home");
+    } else {
+        s.game[0] = '\0';
+        s.in_game = false;
+    }
+
+    menuui::FillServers(s, sv);
+    FillPlayers(s, lp);
+
+    const int page = menuui::CurrentPage();
+    if (page != 8) return;
+
+    instance ve = read<instance>(g_base_address + Offsets::VisualEngine::Pointer);
+    {
+        const char* loaded = *OffsetsLoadedVersion() ? OffsetsLoadedVersion()
+                                                      : Offsets::ClientVersion.c_str();
+        const char* client = OffsetsClientVersion();
+        const bool  known  = client[0] != '\0';
+        const bool  match  = known && std::strcmp(loaded, client) == 0;
+        char otext[128];
+        if (!known) snprintf(otext, sizeof(otext), "%s (client unknown)", loaded);
+        else if (match) snprintf(otext, sizeof(otext), "%s", loaded);
+        else snprintf(otext, sizeof(otext), "%s - CLIENT IS %s", loaded, client);
+        Row(s.runtime, "offsets", match ? 1 : (known ? 3 : 2), "%s", otext);
+    }
+
+    Row(s.runtime, "base",     0, "0x%llX", (unsigned long long)g_base_address);
+    Row(s.runtime, "engine",   ve.is_valid() ? 1 : 3, "0x%llX", (unsigned long long)ve.address);
+    Row(s.runtime, "datamodel", dm.is_valid() ? 1 : 3, "0x%llX", (unsigned long long)dm.address);
+    const auto ents_snap = cache::GetEspSnapshot();
+    Row(s.runtime, "players",  (*ents_snap).empty() ? 2 : 1, "%d cached", (int)(*ents_snap).size());
+    {
+        const float wpm = features::mover::WritesPerMs();
+        const float per_step = wpm * 16.0f;
+        Row(s.runtime, "pos writes", per_step >= 8.0f ? 1 : (per_step > 0.0f ? 2 : 0),
+            "%.1f/ms  (%.0f per step)", wpm, per_step);
+    }
+
+    if (ve.is_valid()) {
+        float view[16]{};
+        float dims[2]{};
+        read_raw(ve.address + Offsets::VisualEngine::ViewMatrix, view, sizeof(view));
+        read_raw(ve.address + Offsets::VisualEngine::Dimensions, dims, sizeof(dims));
+        const bool dims_ok = (dims[0] > 0.0f && dims[1] > 0.0f);
+        Row(s.camera, "viewport", dims_ok ? 1 : 3, "%.0f x %.0f", dims[0], dims[1]);
+        bool all_zero = true;
+        for (int i = 0; i < 16; ++i) if (view[i] != 0.0f) { all_zero = false; break; }
+        Row(s.camera, "view fwd", all_zero ? 3 : 0, "%.2f, %.2f, %.2f",
+            view[2], view[6], view[10]);
+    }
+
+    Row(s.camera, "local player", lp.valid ? 1 : 3, "%s", lp.valid ? lp.name[0] ? lp.name : "ok" : "INVALID");
+    Row(s.camera, "humanoid", lp.humanoid_address ? 0 : 3, "0x%llX",
+        (unsigned long long)lp.humanoid_address);
+    Row(s.camera, "hrp primitive", is_valid_address(lp.hrp_primitive) ? 1 : 3, "0x%llX",
+        (unsigned long long)lp.hrp_primitive);
+    if (lp.valid)
+        Row(s.camera, "position", 0, "%.1f, %.1f, %.1f", lp.x, lp.y, lp.z);
+
+    s.can_test = is_valid_address(lp.hrp_primitive);
+    if (!s.can_test)
+        snprintf(s.test_result, sizeof(s.test_result),
+                 "No HRP primitive - spawn in (or names are failing) before running a write test");
+
+}
+
+// ----------------------------------------------------------------------------
+//  debug page: the offset write tests (same logic as Windows, SleepMs)
+// ----------------------------------------------------------------------------
+void RunTest(int id) {
+    const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
+    const uintptr_t prim = lp.hrp_primitive;
+    if (!is_valid_address(prim)) {
+        snprintf(g_snap.test_result, sizeof(g_snap.test_result), "No root part to write to");
+        return;
+    }
+
+    if (id == 0) {
+        const uintptr_t a = prim + Offsets::Primitive::MotionBlock;
+        const uintptr_t b = a + Offsets::Primitive::MotionStride;
+        float before[18] = {};
+        read_raw(a, before, sizeof(float) * 18);
+        float blk[18] = {};
+        read_raw(a, blk, sizeof(float) * 18);
+        blk[10] += 10.0f;
+        blk[12] = blk[13] = blk[14] = 0.0f;
+        blk[15] = blk[16] = blk[17] = 0.0f;
+        const bool w1 = write_raw(a, blk, sizeof(float) * 18);
+        const bool w2 = write_raw(b, blk, sizeof(float) * 18);
+        float a1[3] = {}, a2[3] = {};
+        read_raw(prim + Offsets::Primitive::Position,  a1, sizeof(a1));
+        read_raw(prim + Offsets::Primitive::Position2, a2, sizeof(a2));
+        snprintf(g_snap.test_result, sizeof(g_snap.test_result),
+                 "BLOCK A: %s dY %.2f  |  BLOCK B: %s dY %.2f  (both blocks, whole)",
+                 w1 ? "ok" : "FAIL", a1[1] - before[10],
+                 w2 ? "ok" : "FAIL", a2[1] - before[10]);
+        LogLine("%s", g_snap.test_result);
+    } else if (id == 1) {
+        const uintptr_t a = prim + Offsets::Primitive::MotionBlock;
+        const uintptr_t b = a + Offsets::Primitive::MotionStride;
+        float blk[18] = {};
+        read_raw(a, blk, sizeof(float) * 18);
+        blk[12] = 0.0f; blk[13] = 100.0f; blk[14] = 0.0f;
+        const bool wrote = write_raw(a, blk, sizeof(float) * 18) &&
+                           write_raw(b, blk, sizeof(float) * 18);
+        float v1[3] = {}, v2[3] = {};
+        read_raw(prim + Offsets::Primitive::AssemblyLinearVelocity,  v1, sizeof(v1));
+        read_raw(prim + Offsets::Primitive::AssemblyLinearVelocity2, v2, sizeof(v2));
+        snprintf(g_snap.test_result, sizeof(g_snap.test_result),
+                 "VEL: %s  wrote y=100  A reads %.2f, B reads %.2f  %s",
+                 wrote ? "ok" : "FAILED", v1[1], v2[1],
+                 (v1[1] > 50.0f && v2[1] > 50.0f) ? "LANDED" : "did NOT stick");
+        LogLine("%s", g_snap.test_result);
+    } else if (id == 4) {
+        const uintptr_t a = prim + Offsets::Primitive::Rotation;
+        const uintptr_t b = a + (Offsets::Primitive::CFrame2 - Offsets::Primitive::Rotation);
+        float p0[3] = {};
+        read_raw(prim + Offsets::Primitive::Position, p0, sizeof(p0));
+        float blk[18] = {};
+        read_raw(a, blk, sizeof(blk));
+        const float want_y = p0[1] + 25.0f;
+        blk[10] = want_y;
+        blk[12] = blk[13] = blk[14] = 0.0f;
+        blk[15] = blk[16] = blk[17] = 0.0f;
+        write_raw(a, blk, sizeof(blk));
+        write_raw(b, blk, sizeof(blk));
+        LogLine("--- survival test: +25 studs, one write, sampled 500ms ---");
+        LogLine("  target y = %.2f (from %.2f)", want_y, p0[1]);
+        char line[160];
+        int held = 0, samples = 0;
+        for (int t = 0; t <= 500; t += 50) {
+            if (t) platform::SleepMs(50);
+            float now_a[3] = {}, now_b[3] = {};
+            float lin[3] = {};
+            read_raw(prim + Offsets::Primitive::Position,  now_a, sizeof(now_a));
+            read_raw(prim + Offsets::Primitive::Position2, now_b, sizeof(now_b));
+            read_raw(prim + Offsets::Primitive::AssemblyLinearVelocity, lin, sizeof(lin));
+            const float dy = now_a[1] - want_y;
+            ++samples;
+            if (fabsf(dy) < 1.0f) ++held;
+            snprintf(line, sizeof(line),
+                     "  t+%3dms  A.y %8.2f (off %+7.2f)  B.y %8.2f  vel.y %7.2f",
+                     t, now_a[1], dy, now_b[1], lin[1]);
+            LogLine("%s", line);
+        }
+        LogLine("--- survival test end ---");
+        snprintf(g_snap.test_result, sizeof(g_snap.test_result),
+                 "Survival: held %d/%d samples over 500ms. See the log - WHEN it "
+                 "reverts is the diagnosis (instantly = solver, ~100-300ms = the "
+                 "server correcting us, never = the write path is fine).",
+                 held, samples);
+    } else if (id == 5) {
+        const uintptr_t a = prim + Offsets::Primitive::Rotation;
+        const uintptr_t b = a + (Offsets::Primitive::CFrame2 - Offsets::Primitive::Rotation);
+        const uintptr_t fa = prim + Offsets::Primitive::Flags;
+        const uint8_t bit = (uint8_t)Offsets::PrimitiveFlags::Anchored;
+        const uint8_t orig = read<uint8_t>(fa);
+        float p0[3] = {};
+        read_raw(prim + Offsets::Primitive::Position, p0, sizeof(p0));
+        LogLine("--- ANCHORED survival test: +25 studs, sampled 500ms ---");
+        LogLine("  flags before = 0x%02X (anchored bit %s)",
+                (unsigned)orig, (orig & bit) ? "ALREADY SET" : "clear");
+        write<uint8_t>(fa, (uint8_t)(orig | bit));
+        const uint8_t after_set = read<uint8_t>(fa);
+        LogLine("  flags after set = 0x%02X  -> anchor %s",
+                (unsigned)after_set,
+                (after_set & bit) ? "took" : "DID NOT TAKE (write rejected/wrong byte)");
+        float blk[18] = {};
+        read_raw(a, blk, sizeof(blk));
+        const float want_y = p0[1] + 25.0f;
+        blk[10] = want_y;
+        blk[12] = blk[13] = blk[14] = 0.0f;
+        blk[15] = blk[16] = blk[17] = 0.0f;
+        write_raw(a, blk, sizeof(blk));
+        write_raw(b, blk, sizeof(blk));
+        char line[192];
+        int held = 0, samples = 0;
+        for (int t = 0; t <= 500; t += 50) {
+            if (t) platform::SleepMs(50);
+            float na[3] = {}, nb[3] = {}, lin[3] = {};
+            read_raw(prim + Offsets::Primitive::Position,  na, sizeof(na));
+            read_raw(prim + Offsets::Primitive::Position2, nb, sizeof(nb));
+            read_raw(prim + Offsets::Primitive::AssemblyLinearVelocity, lin, sizeof(lin));
+            const uint8_t f = read<uint8_t>(fa);
+            const float dy = na[1] - want_y;
+            ++samples;
+            if (fabsf(dy) < 1.0f) ++held;
+            snprintf(line, sizeof(line),
+                     "  t+%3dms  A.y %8.2f (off %+7.2f)  B.y %8.2f  vel.y %7.2f  flags 0x%02X%s",
+                     t, na[1], dy, nb[1], lin[1], (unsigned)f,
+                     (f & bit) ? "" : "  <- ANCHOR CLEARED");
+            LogLine("%s", line);
+        }
+        write<uint8_t>(fa, orig);
+        LogLine("  --- anchor released, flags restored to 0x%02X ---", (unsigned)orig);
+        for (int t = 50; t <= 300; t += 50) {
+            platform::SleepMs(50);
+            float na[3] = {}, lin[3] = {};
+            read_raw(prim + Offsets::Primitive::Position, na, sizeof(na));
+            read_raw(prim + Offsets::Primitive::AssemblyLinearVelocity, lin, sizeof(lin));
+            snprintf(line, sizeof(line),
+                     "  post+%3dms  A.y %8.2f (rel start %+7.2f)  vel.y %7.2f",
+                     t, na[1], na[1] - want_y, lin[1]);
+            LogLine("%s", line);
+        }
+        LogLine("--- anchored survival test end ---");
+        snprintf(g_snap.test_result, sizeof(g_snap.test_result),
+                 "Anchored: held %d/%d over 500ms. If the anchor bit shows CLEARED, "
+                 "the flags write is being undone. If it held but y still fell, the "
+                 "anchor does not own position here. See the log.",
+                 held, samples);
+    } else {
+        LogLine("--- primitive float probe (hrp 0x%llX) ---", (unsigned long long)prim);
+        char line[128];
+        for (int off = 0xA0; off <= 0x1C0; off += 0x10) {
+            float vals[4] = {};
+            read_raw(prim + off, vals, sizeof(vals));
+            snprintf(line, sizeof(line), "  +0x%03X: %9.2f %9.2f %9.2f %9.2f",
+                     off, vals[0], vals[1], vals[2], vals[3]);
+            LogLine("%s", line);
+        }
+        snprintf(g_snap.test_result, sizeof(g_snap.test_result),
+                 "Probe written to the log below (0xA0..0x1C0)");
+        LogLine("--- probe end ---");
+    }
+}
+
+// ----------------------------------------------------------------------------
+//  the actions the UI calls into
+// ----------------------------------------------------------------------------
+menuui::Actions MakeActions() {
+    menuui::Actions a;
+    a.poll_key = [] { return PollKey(); };
+    a.key_name = &KeyName;
+
+    a.list_configs = [] { return config::GetConfigList(); };
+    a.config_save = [](const char* n) { return config::Save(n); };
+    a.config_load = [](const char* n) { return config::Load(n); };
+    a.config_delete = [](const char* n) { return config::Delete(n); };
+    a.config_rename = [](const char* from, const char* to) { return config::Rename(from, to); };
+    a.open_config_folder = [] { config::OpenConfigFolder(); };
+
+    a.run_test = &RunTest;
+    a.draw_dex = [] { features::explorer::DrawPanel(); };
+    a.hitsound_test = [] { features::hitsound::Test(); };
+    a.toggle_friend = [](uint32_t id) { features::friends::ToggleFriend(id); };
+
+    a.rescan              = [] { clear_instance_caches(); };
+    a.servers_refresh     = [] { features::servers::Refresh(); };
+    a.servers_join        = [](int i) { features::servers::JoinRow(i); };
+    a.servers_hop_openest = [] { features::servers::HopToOpenest(); };
+    a.servers_rejoin      = [] { features::servers::Rejoin(); };
+
+    a.tp_to_player     = [](uint32_t id) { return features::TeleportToPlayer(id); };
+    a.spectate_player  = [](uint32_t id) { features::StartSpectate(id); };
+    a.spectate_stop    = [] { features::StopSpectate(); };
+    a.waypoint_add     = [](const char* n) { features::AddWaypointHere(n); };
+    a.waypoint_fill    = [] { features::FillWaypointEdit(); };
+    a.waypoint_add_xyz = [](const char* n, float x, float y, float z) {
+        features::AddWaypointAt(n, x, y, z);
+    };
+    a.waypoint_goto    = [](int i) { features::GotoWaypoint(i); };
+    a.waypoint_remove  = [](int i) { features::RemoveWaypoint(i); };
+    return a;
+}
+
+} // namespace
+
+// =============================================================================
+//  entry points (called from overlay::render_ui)
+// =============================================================================
+void TickKeybinds() {
+    menuui::TickKeybinds();
+}
+
+void RenderMenu() {
+    static bool s_actions_installed = false;
+    if (!s_actions_installed) {
+        s_actions_installed = true;
+        config::EnsureConfigDir();
+        menuui::SetActions(MakeActions());
+    }
+
+    FillSnapshot();
+    menuui::Render(g_snap);
+}
+
+#endif
+SOBER_SOURCE_5_END
+mkdir -p "$WORK/roblox_external"
+cat > "$WORK/roblox_external/offsets_dynamic.cpp" <<'SOBER_SOURCE_6_END'
+// ----------------------------------------------------------------------------
+//  offsets_dynamic.cpp — Linux PID-local offset patching (LINUX_PORT_PLAN §6)
+// ----------------------------------------------------------------------------
+#ifdef __linux__
+
+#include "offsets_dynamic.h"
+#include "offsets.h"
+#include "platform/platform.h"
+#include "platform/sober_scanner.h"
+#include "globals.h"
+
+#include <string>
+#include <mutex>
+#include <atomic>
+#include <chrono>
+
+namespace offsets_dynamic {
+namespace {
+    std::string g_diag = "offsets_dynamic: not yet tried";
+    std::mutex g_mutex;
+    std::atomic<bool> g_done{false};
+    bool g_ok = false;
+    sober::ScanResult g_result;
+    uint32_t g_pid = 0;
+    uintptr_t g_base = 0;
+    std::string g_start;
+    std::chrono::steady_clock::time_point g_next_probe{};
+} // namespace
+
+bool PatchFrom(const Patch& p) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    if (p.dataModel) g_result.dataModel = p.dataModel;
+    if (p.workspace) g_result.workspace = p.workspace;
+    if (p.world) g_result.world = p.world;
+    if (p.primitives) g_result.primitives = p.primitives;
+    if (p.primRotation) Offsets::Primitive::Rotation = p.primRotation;
+    if (p.primFlags) Offsets::Primitive::Flags = p.primFlags;
+    g_diag = "offsets_dynamic: patched from injected Patch";
+    g_ok = true;
+    g_done = true;
+    return true;
+}
+
+bool Ensure() {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_next_probe) return g_ok;
+    g_next_probe = now + std::chrono::milliseconds(500);
+    uint32_t pid = platform::FindGameProcess();
+    const auto start = sober::ProcessStartTicks(pid);
+    const auto base = pid ? platform::GameBaseAddress(pid) : 0;
+    if (g_done.load() && pid && base && pid == g_pid && base == g_base && start == g_start) return g_ok;
+    g_ok = false;
+    g_result = {};
+    g_done = false;
+    if (!pid) {
+        g_diag = "offsets_dynamic: no Sober pid (waiting for attach)";
+        g_ok = false;
+        // Transient attach failure must be retried after launch/restart.
+        return g_ok;
+    }
+    if (!base) {
+        g_diag = "offsets_dynamic: no libRoblox base for pid " + std::to_string(pid);
+        g_ok = false;
+        // Transient attach failure must be retried after launch/restart.
+        return g_ok;
+    }
+    void* h = nullptr;
+    if (!platform::OpenGameHandle(pid, &h)) {
+        g_diag = "offsets_dynamic: OpenGameHandle failed for pid " + std::to_string(pid);
+        g_ok = false;
+        // Transient attach failure must be retried after launch/restart.
+        return g_ok;
+    }
+    auto res = sober::Scan(h, pid, base);
+    platform::CloseHandle(h);
+    g_result = res;
+    g_diag = res.diag;
+    if (!res.diag.empty()) LogLine("offsets_dynamic: %s", res.diag.c_str());
+    if (res.ok()) {
+        if (res.primitiveRotation) Offsets::Primitive::Rotation = res.primitiveRotation;
+        if (res.primitiveFlags) Offsets::Primitive::Flags = res.primitiveFlags;
+        if (res.primitivePosition) Offsets::Primitive::Position = res.primitivePosition;
+        LogLine("offsets_dynamic: OK task 0x%llx data 0x%llx ws 0x%llx world 0x%llx",
+                (unsigned long long)res.taskScheduler,
+                (unsigned long long)res.dataModel,
+                (unsigned long long)res.workspace,
+                (unsigned long long)res.world);
+        g_ok = true;
+    } else {
+        LogLine("offsets_dynamic: unresolved Linux layout — no Windows fallback");
+        g_ok = false;
+    }
+    g_pid = pid; g_base = base; g_start = start;
+    g_done = true;
+    return g_ok;
+}
+
+const std::string& diag() {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    return g_diag;
+}
+const sober::ScanResult& GetScanResult() { return g_result; }
+uintptr_t GetDataModel() { return g_result.dataModel; }
+
+void Invalidate() {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    g_done = false;
+    g_ok = false;
+    g_diag = "offsets_dynamic: invalidated (will re-scan)";
+    g_result = sober::ScanResult{};
+    g_pid = 0; g_base = 0; g_start.clear(); g_next_probe = {};
+}
+
+} // namespace offsets_dynamic
+
+#else // Windows
+
+#include "offsets_dynamic.h"
+namespace offsets_dynamic {
+bool Ensure() { return false; }
+const std::string& diag() { static std::string s="windows: use offsets_live"; return s; }
+void Invalidate() {}
+bool PatchFrom(const Patch&) { return false; }
+}
+
+#endif
+SOBER_SOURCE_6_END
+mkdir -p "$WORK/boot"
+cat > "$WORK/boot/bootstrap_core.cpp" <<'SOBER_SOURCE_7_END'
+// -----------------------------------------------------------------------------
+//  boot/bootstrap_core.cpp — readiness + overlay supervision (see header)
+// -----------------------------------------------------------------------------
+#include "bootstrap_core.h"
+
+#include "platform/platform.h"
+#include "platform/sober_scanner.h"
+
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <string>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+namespace bootcore {
+namespace {
+
+pid_t g_overlay_pid = -1;
+
+bool FileExists(const std::string& p)
+{
+    struct stat st{};
+    return stat(p.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
+
+int ReadYama()
+{
+    std::ifstream f("/proc/sys/kernel/yama/ptrace_scope");
+    if (!f) return -1;
+    int v = -1;
+    f >> v;
+    return v;
+}
+
+// The overlay binary, beside this executable. 'external' is the build-tree
+// name; 'roblox-external' is what assets/install.sh installs it as.
+std::string OverlayPath()
+{
+    const std::string dir = platform::ExeDir();
+    if (FileExists(dir + "external")) return dir + "external";
+    if (FileExists(dir + "roblox-external")) return dir + "roblox-external";
+    return dir + "external";
+}
+
+} // namespace
+
+const char* ExeDir()
+{
+    // platform::ExeDir() returns by value — keep one static copy for callers.
+    static std::string s = platform::ExeDir();
+    return s.c_str();
+}
+
+Status Poll()
+{
+    Status s;
+
+    s.sober_pid = sober::FindSoberPid();
+    s.sober = s.sober_pid != 0;
+    s.libroblox = false;
+    s.maps_denied = false;
+    if (s.sober) {
+        // Distinguish three states so the operator gets the right fix line:
+        //   (a) maps readable + libroblox found  → ready to load
+        //   (b) maps UNREADABLE (EACCES)         → yama ptrace_scope problem
+        //   (c) maps readable, libroblox missing → true flatpak-ns / early start
+        bool denied = false;
+        uintptr_t base = sober::LibRobloxBase(s.sober_pid, &denied);
+        s.libroblox = (base != 0);
+        s.maps_denied = denied && base == 0;
+    }
+    s.yama = ReadYama();
+    s.display = platform::HasGraphicalDisplay();
+    s.overlay_file = FileExists(OverlayPath());
+
+    if (g_overlay_pid > 0) {
+        int st = 0;
+        const pid_t r = waitpid(g_overlay_pid, &st, WNOHANG);
+        if (r == g_overlay_pid || (r < 0 && errno == ECHILD)) g_overlay_pid = -1;
+    }
+    s.overlay_running = g_overlay_pid > 0;
+
+    // Readiness, in the order the operator hits the wall:
+    //  Sober -> memory access (yama — gate this BEFORE libroblox because a
+    //  yama block causes libroblox to appear "missing" too) -> display -> binary.
+    // Successful cross-process ELF reads are stronger evidence than a global
+    // policy value (a permitted process may read even with ptrace_scope > 0).
+    s.ready = s.sober && s.libroblox && s.display && s.overlay_file;
+
+    if (s.overlay_running) {
+        snprintf(s.line, sizeof(s.line), "overlay running (pid %d)", (int)g_overlay_pid);
+        snprintf(s.detail, sizeof(s.detail), "locked to Sober — stop it here or close Sober");
+    } else if (!s.sober) {
+        snprintf(s.line, sizeof(s.line), "looking for Sober...");
+        if (s.yama > 0) {
+            snprintf(s.detail, sizeof(s.detail),
+                     "no unique readable libroblox ELF; ptrace_scope=%d may restrict memory probing. Run the read-only diagnostic.", s.yama);
+        } else {
+            snprintf(s.detail, sizeof(s.detail),
+                     "no unique readable libroblox ELF; open a game or inspect permissions/multiple instances with the diagnostic");
+        }
+    } else if (s.yama > 0 && !s.libroblox) {
+        // yama blocks PTRACE_MODE_READ on /proc/<pid>/maps — this is the #1
+        // reason libroblox "isn't visible", and it's the fix the operator can
+        // apply without reinstalling anything. Show it BEFORE the flatpak-ns
+        // guess so the "run as root" suggestion doesn't mask it.
+        snprintf(s.line, sizeof(s.line), "Sober found (pid %u) — not ready", s.sober_pid);
+        snprintf(s.detail, sizeof(s.detail),
+                 "yama ptrace_scope=%d blocks reading Sober's memory. "
+                 "Fix once per boot:  sudo sysctl kernel.yama.ptrace_scope=0", s.yama);
+    } else if (s.maps_denied) {
+        // yama reads as 0 but /proc/<pid>/maps still opens EACCES — usually
+        // the LSM (AppArmor/SELinux/TOMOYO) or the pid is a setuid helper.
+        snprintf(s.line, sizeof(s.line), "Sober found (pid %u) — not ready", s.sober_pid);
+        snprintf(s.detail, sizeof(s.detail),
+                 "permission denied reading /proc/%u/maps even with yama=0; "
+                 "inspect target credentials and security policy.", s.sober_pid);
+    } else if (!s.libroblox) {
+        // Maps are readable but libroblox.so isn't there — this is the real
+        // flatpak-ns / bwrap-startup case.
+        snprintf(s.line, sizeof(s.line), "Sober found (pid %u) — not ready", s.sober_pid);
+        snprintf(s.detail, sizeof(s.detail),
+                 "no readable ELF image self-identifying as libroblox.so; "
+                 "no filename or namespace cause is assumed");
+    } else if (!s.display) {
+        snprintf(s.line, sizeof(s.line), "Sober found — not ready");
+        snprintf(s.detail, sizeof(s.detail), "no DISPLAY/WAYLAND_DISPLAY — the overlay needs a graphical session");
+    } else if (!s.overlay_file) {
+        snprintf(s.line, sizeof(s.line), "Sober found — not ready");
+        snprintf(s.detail, sizeof(s.detail),
+                 "no overlay binary (external / roblox-external) beside the bootstrapper — run setup.sh first");
+    } else {
+        snprintf(s.line, sizeof(s.line), "memory attached (pid %u) — shell ready", s.sober_pid);
+        uintptr_t base = sober::LibRobloxBase(s.sober_pid);
+        snprintf(s.detail, sizeof(s.detail), "ELF load bias 0x%llx — Load opens the shell; game features stay disabled until Linux layout validation",
+                 (unsigned long long)base);
+    }
+    return s;
+}
+
+bool StartOverlay(char* err, std::size_t errlen)
+{
+    if (err && errlen) err[0] = '\0';
+    if (g_overlay_pid > 0) {
+        if (err && errlen) snprintf(err, errlen, "overlay already running (pid %d)", (int)g_overlay_pid);
+        return false;
+    }
+    const std::string exe = OverlayPath();
+    if (!FileExists(exe)) {
+        if (err && errlen) snprintf(err, errlen, "no overlay binary at %s", exe.c_str());
+        return false;
+    }
+    const pid_t pid = fork();
+    if (pid < 0) {
+        if (err && errlen) snprintf(err, errlen, "fork failed (errno %d)", errno);
+        return false;
+    }
+    if (pid == 0) {
+        // Child: the overlay in locked mode — hidden unless Sober's window is
+        // there, geometry following it. Its own process group so our Ctrl-C
+        // does not race it; it exits on SIGTERM with its restore path.
+        setsid();
+        const char* argv[] = { "external", "--locked", nullptr };
+        execv(exe.c_str(), (char* const*)argv);
+        _exit(127);
+    }
+    g_overlay_pid = pid;
+    return true;
+}
+
+bool StopOverlay()
+{
+    if (g_overlay_pid <= 0) return false;
+    kill(g_overlay_pid, SIGTERM);
+    for (int i = 0; i < 30; ++i) {
+        int st = 0;
+        if (waitpid(g_overlay_pid, &st, WNOHANG) == g_overlay_pid) {
+            g_overlay_pid = -1;
+            return true;
+        }
+        usleep(100 * 1000);
+    }
+    // Not exiting after 3 s: leave it, report the pid; its writes restore only
+    // on a clean exit, so we do NOT SIGKILL by default.
+    return true;
+}
+
+} // namespace bootcore
+SOBER_SOURCE_7_END
+mkdir -p "$WORK/roblox_external/platform"
+cat > "$WORK/roblox_external/platform/linux_elf.h" <<'SOBER_SOURCE_8_END'
+#pragma once
+// Linux ELF inspection shared by diagnostics and attachment. No game offsets.
+#ifdef __linux__
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <elf.h>
+#include <string>
+#include <vector>
+#include <utility>
+#include <sys/uio.h>
+#include <unistd.h>
+namespace linux_elf {
+struct Image {
+    uintptr_t bias = 0;
+    bool valid = false;
+    std::string soname;
+    std::string build_id;
+    std::vector<std::pair<uintptr_t, uintptr_t>> executable_ranges;
+};
+inline bool Read(unsigned pid, uintptr_t address, void* out, size_t size) {
+    if (size > UINTPTR_MAX - address) return false;
+    iovec local{out, size}, remote{reinterpret_cast<void*>(address), size};
+    return process_vm_readv(pid, &local, 1, &remote, 1, 0) == static_cast<ssize_t>(size);
+}
+inline Image Inspect(unsigned pid, uintptr_t headerAddress) {
+    Image image;
+    Elf64_Ehdr header{};
+    if (!Read(pid, headerAddress, &header, sizeof(header)) ||
+        std::memcmp(header.e_ident, ELFMAG, SELFMAG) ||
+        header.e_ident[EI_CLASS] != ELFCLASS64 || header.e_ident[EI_DATA] != ELFDATA2LSB ||
+        header.e_ident[EI_VERSION] != EV_CURRENT || header.e_version != EV_CURRENT ||
+        (header.e_type != ET_DYN && header.e_type != ET_EXEC) ||
+        header.e_phentsize != sizeof(Elf64_Phdr) || !header.e_phnum || header.e_phnum > 256 ||
+        header.e_phoff > 1048576 || header.e_phoff > UINTPTR_MAX - headerAddress) return image;
+    std::vector<Elf64_Phdr> ph(header.e_phnum);
+    if (!Read(pid, headerAddress + header.e_phoff, ph.data(), ph.size() * sizeof(Elf64_Phdr))) return image;
+    for (const auto& p : ph) {
+        if (p.p_type != PT_LOAD) continue;
+        if (p.p_filesz > p.p_memsz || p.p_vaddr > UINTPTR_MAX - p.p_memsz) return image;
+        if (p.p_offset == 0 && p.p_filesz >= sizeof(header) && p.p_vaddr <= headerAddress) {
+            if (image.valid && image.bias != headerAddress - p.p_vaddr) return Image{};
+            image.bias = headerAddress - p.p_vaddr;
+            image.valid = true;
+        }
+    }
+    if (!image.valid) return image;
+    for (const auto& p : ph) {
+        if (p.p_type != PT_LOAD || !(p.p_flags & PF_X)) continue;
+        if (p.p_vaddr > UINTPTR_MAX - image.bias || p.p_memsz > UINTPTR_MAX - (image.bias + p.p_vaddr)) return Image{};
+        image.executable_ranges.emplace_back(image.bias + p.p_vaddr, image.bias + p.p_vaddr + p.p_memsz);
+    }
+    auto inside = [&](uintptr_t address, size_t size) {
+        for (const auto& p : ph) {
+            if (p.p_type != PT_LOAD || p.p_vaddr > UINTPTR_MAX - image.bias) continue;
+            auto begin = image.bias + p.p_vaddr;
+            if (address >= begin && address - begin <= p.p_memsz &&
+                size <= p.p_memsz - (address - begin) && size <= UINTPTR_MAX - address) return true;
+        }
+        return false;
+    };
+    auto read = [&](uintptr_t address, void* out, size_t size) {
+        return inside(address, size) && Read(pid, address, out, size);
+    };
+    for (const auto& p : ph) {
+        if (p.p_type != PT_DYNAMIC || p.p_vaddr > UINTPTR_MAX - image.bias) continue;
+        auto dynamicAddress = image.bias + p.p_vaddr;
+        uintptr_t strings = 0;
+        size_t length = 0, nameOffset = 0;
+        bool hasName = false, terminated = false;
+        for (size_t i = 0; i < std::min<size_t>(p.p_memsz / sizeof(Elf64_Dyn), 4096); ++i) {
+            Elf64_Dyn dyn{};
+            auto offset = i * sizeof(dyn);
+            if (offset > UINTPTR_MAX - dynamicAddress || !read(dynamicAddress + offset, &dyn, sizeof(dyn))) break;
+            if (dyn.d_tag == DT_NULL) { terminated = true; break; }
+            if (dyn.d_tag == DT_STRTAB) strings = dyn.d_un.d_ptr;
+            if (dyn.d_tag == DT_STRSZ) length = dyn.d_un.d_val;
+            if (dyn.d_tag == DT_SONAME) { nameOffset = dyn.d_un.d_val; hasName = true; }
+        }
+        if (!terminated || !hasName || !strings || nameOffset >= length || length > 64 * 1024 * 1024) continue;
+        std::vector<uintptr_t> choices;
+        if (inside(strings, length)) choices.push_back(strings);
+        if (strings <= UINTPTR_MAX - image.bias && inside(image.bias + strings, length) &&
+            (choices.empty() || choices[0] != image.bias + strings)) choices.push_back(image.bias + strings);
+        if (choices.size() != 1) continue; // Never choose an ambiguous pointer representation.
+        std::string name;
+        for (size_t i = 0; i < std::min<size_t>(length - nameOffset, 512); ++i) {
+            char ch;
+            if (!read(choices[0] + nameOffset + i, &ch, 1)) break;
+            if (!ch) { image.soname = name; break; }
+            if (static_cast<unsigned char>(ch) < 32 || static_cast<unsigned char>(ch) == 127) break;
+            name += ch;
+        }
+    }
+    for (const auto& p : ph) {
+        if (p.p_type != PT_NOTE || !p.p_filesz || p.p_filesz > 65536 || p.p_vaddr > UINTPTR_MAX - image.bias) continue;
+        std::vector<unsigned char> notes(p.p_filesz);
+        if (!read(image.bias + p.p_vaddr, notes.data(), notes.size())) continue;
+        size_t at = 0;
+        while (at + sizeof(Elf64_Nhdr) <= notes.size()) {
+            Elf64_Nhdr note;
+            std::memcpy(&note, notes.data() + at, sizeof(note));
+            at += sizeof(note);
+            size_t names = (size_t(note.n_namesz) + 3) & ~size_t(3);
+            size_t desc = (size_t(note.n_descsz) + 3) & ~size_t(3);
+            if (names > notes.size() - at || desc > notes.size() - at - names) break;
+            if (note.n_type == NT_GNU_BUILD_ID && note.n_namesz == 4 &&
+                !std::memcmp(notes.data() + at, "GNU", 4)) {
+                static const char hex[] = "0123456789abcdef";
+                for (size_t i = 0; i < note.n_descsz; ++i) {
+                    auto c = notes[at + names + i];
+                    image.build_id += hex[c >> 4]; image.build_id += hex[c & 15];
+                }
+            }
+            at += names + desc;
+        }
+    }
+    return image;
+}
+} // namespace linux_elf
+#endif
+SOBER_SOURCE_8_END
+cat > "$WORK/manifest" <<'SOBER_MANIFEST_END'
+roblox_external/platform/sober_scanner.cpp f9650b560aa0cb3a7c7bdfb6781d04dfdf61fbb74f9799fa0b60114d2dda8016 744302b4f48f935f3cc64233bb43179f7a4e448ebbb83020954095c3ed8b74ce
+roblox_external/platform/sober_scanner.h c9c5023abf30d2e5f61e7f42218cbc5054c981e8dd6e45cfe074625002d9c159 d81c86fc16416ab8dfab79ccaad1dc573bda120d9c9ae67faaac657bf52b8719
+roblox_external/platform/platform_linux.cpp f705eec7eeab1b4a93c4a5786886e38a77625cc5775d023d716851fcabb00b18 e4561bb7b89b8892146b9f4d1cc2b57afd5048308b8ac5845abb09b520b6b9a6
+roblox_external/platform/main_linux.cpp 8da90c497db3827dbc1ac47cbf47b3ee3d9df5703d629eb015935696ca318748 99bde5af9aa1996fd248c89b62a97b27620b1129473ec9cd33951ccfc3296373
+roblox_external/game.cpp 0ccce723187da8cb55d02d3cc4282ae66e2cbf2e53b3a3638f36e7cf261ceeb3 92a2b25ac80e8b3f6db5fde67e0da9559f9b34a167ad2ffb6ba01d151f4b6b45
+roblox_external/menu_linux.cpp ae11da83f790aacf19e54b08eaeba61ee5d74b0b24f633e86501c6400c57f4f8 606158aa7c377e58614a41347c9eb99ef4c2748a77d9097fe5f8fa14a78e2c41
+roblox_external/offsets_dynamic.cpp 0269de4a5497c9b133382e6bb401420f9a2aa61fd3ea35d702ade5abcff5bbf2 e6b0f34d83721c8371d38b7328f06f475fe0e0d6630318a7694730d7a45ed837
+boot/bootstrap_core.cpp ea1bca708ff6a3ffce62fc44e0192eac6e8fc7caab1453bd25be737d49e3fd2e c458db2bec9f82dc17dd46f0dde911033344ce553ca5453e92ae3bac2763bbf7
+roblox_external/platform/linux_elf.h - 908445fad61dfa8d1cf8dbcd8fc370b0700219a3c7946e553af97d7fe7bc34f4
+SOBER_MANIFEST_END
+# Validate every preimage and staged source before changing any target file.
+while read -r path before after; do
+ actual=$(sha256sum "$WORK/$path" | cut -d' ' -f1)
+ [ "$actual" = "$after" ] || { echo "Staged source mismatch: $path" >&2; exit 1; }
+ [ ! -L "$DEST/$path" ] || { echo "Refusing symlink: $path" >&2; exit 1; }
+ if [ -e "$DEST/$path" ]; then
+   actual=$(sha256sum "$DEST/$path" | cut -d' ' -f1)
+   [ "$actual" = "$after" ] || [ "$actual" = "$before" ] || {
+     echo "Unsupported or locally modified source: $path; nothing changed." >&2; exit 1;
+   }
+ else
+   [ "$before" = '-' ] || { echo "Missing source: $path; nothing changed." >&2; exit 1; }
+ fi
+done < "$WORK/manifest"
+while read -r path before after; do
+ cp "$WORK/$path" "$DEST/$path"
+done < "$WORK/manifest"
+echo "SOBER_ATTACHMENT_UPGRADE_022=APPLIED"
+echo "Verified ELF attachment replaces name scores; unvalidated game features remain disabled."
+echo "Next: sh $DEST/setup.sh"
