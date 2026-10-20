@@ -194,8 +194,8 @@ bool PlayWav(const char* path, float volume);
 // ---- raw mouse input ----------------------------------------------------------
 // Linux: uses SDL relative mouse mode (captures cursor, reports raw deltas).
 // Returns true if deltas were consumed (raw mouse is active).
-bool TakeRawMouse(int& dx, int& dy);
+bool platform::TakeRawMouse(int& dx, int& dy);
 // Resets/disables raw mouse capture so cursor is free again.
-void DropRawMouse();
+void platform::DropRawMouse();
 // True while raw mouse mode is active.
-bool IsRawMouseActive();
+bool platform::IsRawMouseActive();
