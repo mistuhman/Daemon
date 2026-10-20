@@ -1,0 +1,121 @@
+```
+[sd@66 ~]$ # fetch + extract (choose any absolute dir)
+curl -L https://paste.c-net.org/MascaraLearned -o /tmp/daemon-linux-011.txt
+sh /tmp/daemon-linux-011.txt /home/sd/daemon-011
+sh /home/sd/daemon-011/setup.sh  # watch for:
+# [setup] marked current iteration ti-12
+# [cleanup] removing previous iteration (legacy payload shape): /home/sd/daemon-009
+# [cleanup] removing previous iteration (legacy payload shape): /home/sd/daemon-010
+# [cleanup] previous iterations removed=2; current=/home/sd/daemon-011 (ti-12)
+# [setup] overlay log after Load will be: /home/sd/daemon-011/overlay.log
+
+# in daemon-boot, click Load — the log window will now say:
+# overlay log: /home/sd/daemon-011/overlay.log
+# verify:
+ls -lh /home/sd/daemon-011/overlay.log   # visible next to the 7 items in your screenshot
+cat /home/sd/daemon-011/overlay.log
+ls ~/ | grep daemon-  # 009/010 should be gone, only 011 remains
+  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+                                 Dload  Upload  Total   Spent   Left   Speed
+100  2.71M 100  2.71M   0      0  1.38M      0   00:01   00:01         390.6k
+ARCHIVE_SHA256_GOT=0591f6f372c8745bf9d15ba1376c404805b0ff3d4d4ea16be68ef858c46545bf
+PAYLOAD_SHA256_GOT=92edea61b8a996e939c18c6ceb1620d39f3619949740b7cfd206bf1272c79cc9
+DAEMON_LINUX_011_DONE=YES
+-rw-r--r-- 1 sd sd 317 Oct 20 10:44 /home/sd/daemon-011/assets/daemon.desktop
+Next: sh /home/sd/daemon-011/setup.sh
+--- inverse ---
+ARCHIVE_SHA256_WANT=0591f6f372c8745bf9d15ba1376c404805b0ff3d4d4ea16be68ef858c46545bf ARCHIVE_SHA256_GOT=0591f6f372c8745bf9d15ba1376c404805b0ff3d4d4ea16be68ef858c46545bf PAYLOAD_SHA256_WANT=92edea61b8a996e939c18c6ceb1620d39f3619949740b7cfd206bf1272c79cc9 PAYLOAD_SHA256_GOT=92edea61b8a996e939c18c6ceb1620d39f3619949740b7cfd206bf1272c79cc9 FILES=169 DEST=/home/sd/daemon-011
+=== Daemon Void setup (payload setup.sh) ===
+[setup] yama ptrace_scope=0
+Password: 
+[*] Updating repository `https://repo-default.voidlinux.org/current/x86_64-repodata' ...
+[*] Updating repository `https://repo-default.voidlinux.org/current/multilib/nonfree/x86_64-repodata' ...
+[*] Updating repository `https://repo-default.voidlinux.org/current/multilib/x86_64-repodata' ...
+[*] Updating repository `https://repo-default.voidlinux.org/current/nonfree/x86_64-repodata' ...
+[setup] try base-devel...
+ERROR: Package `base-devel' already installed.
+[setup] try cmake...
+libopenshot-0.4.0_2: broken, unresolvable shlib `libjsoncpp.so.26'
+openxr-1.1.57_2: broken, unresolvable shlib `libjsoncpp.so.26'
+ERROR: Transaction aborted due to unresolved shlibs.
+[setup] try curl...
+ERROR: Package `curl' already installed.
+[setup] try pkg-config...
+ERROR: Package `pkg-config' already installed.
+[setup] try SDL2...
+ERROR: Package `SDL2' already installed.
+[setup] try SDL2-devel...
+ERROR: Package `SDL2-devel' already installed.
+[setup] try mesa...
+ERROR: Package `mesa' already installed.
+[setup] try libglvnd-devel...
+ERROR: Package `libglvnd-devel' already installed.
+[setup] try libX11-devel...
+ERROR: Package `libX11-devel' already installed.
+[setup] try libXtst-devel...
+ERROR: Package `libXtst-devel' already installed.
+[setup] try gtk+3...
+ERROR: Package `gtk+3' already installed.
+[setup] try flatpak...
+ERROR: Package `flatpak' already installed.
+[setup] try xtools...
+ERROR: Package `xtools' already installed.
+libxfce4windowing-4.20.6_1: broken, unresolvable shlib `libdisplay-info.so.2'
+ERROR: Transaction aborted due to unresolved shlibs.
+[setup] g++ (GCC) 14.2.1 20250405
+[setup] cmake configure (log: /home/sd/daemon-011/build.log)
+[setup] overlay windowed (WM_CLASS=daemon via SDL_VIDEO_X11_WMCLASS)
+[setup] build (full log: /home/sd/daemon-011/build.log)
+[setup] build OK
+/home/sd/daemon-011/daemon/menu_linux.cpp:216:17: note: 'snprintf' output between 1 and 64 bytes into a destination of size 32
+  216 |         snprintf(r.account, sizeof(r.account), "%s", e.name[0] ? e.name : r.name);
+      |         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[100%] Linking CXX executable daemon
+[100%] Built target daemon
+-rwxr-xr-x 1 sd sd 2.0M Oct 20 12:50 /home/sd/daemon-011/build/daemon
+BUILD_DONE=YES
+BOOT_DONE=YES
+[doctor] ---- readiness scan (daemon-boot --check) ----
+sober=0 pid=0 libroblox=0 yama=0 display=1 overlay=1
+status: looking for Sober...
+[setup] marked current iteration ti-12 (/home/sd/daemon-011/.daemon-iteration)
+[setup] install desktop entry: sh /home/sd/daemon-011/assets/install.sh
+installed /home/sd/.local/bin/daemon-boot (manager) + /home/sd/.local/bin/daemon (overlay)
+installed /home/sd/.local/share/applications/daemon.desktop (StartupWMClass=daemon, Icon=daemon)
+installed icons to ~/.local/share/icons/hicolor/*/apps/daemon.png
+XFCE: appears in Whisker Menu > Game. Ulauncher: type 'daemon'.
+Run: daemon-boot  or  /home/sd/.local/bin/daemon-boot   (click Load once Sober is up)
+[setup] desktop entry installed
+[cleanup] removing previous iteration (legacy payload shape): /home/sd/daemon-009
+[cleanup] removed previous iteration: /home/sd/daemon-009
+[cleanup] removing previous iteration (legacy payload shape): /home/sd/daemon-010
+[cleanup] removed previous iteration: /home/sd/daemon-010
+[cleanup] previous iterations removed=2; current=/home/sd/daemon-011 (ti-12)
+[setup] cleanup checked
+Daemon ti-12 linux — plug-and-play + dynamic offset fetcher
+Daemon ti-12 linux — plug-and-play + dynamic offset fetcher
+waiting for Sober... (launch via flatpak run org.vinegarhq.Sober or /opt/sober/sober)
+Daemon: overlay window up (GLX ARGB32 visual + core3.0 d24 s8 a8)
+Daemon: transparent overlay active — 1046x1159+7951+327, ARGB depth 32, XFixes click-through armed
+Daemon: SDL2+GL ImGui shell active — HOME/F8 toggles the menu (and its click-through)
+Daemon: streamprooftransparent overlay 1046x1159+7951+327 — click-through off (menu open) — x11: window=found depth=32 xfixes=1 click-through=off hotkeys=on pid=0
+Daemon: window closed
+Daemon: shutdown called
+exit
+12:50:43 bootstrapper console mode — watching for Sober
+12:50:43 status: looking for Sober...
+12:50:43         no unique readable libroblox ELF; open a game or inspect permissions/multiple instances with the diagnostic
+[setup] overlay log after Load will be: /home/sd/daemon-011/overlay.log  (or /tmp/daemon-overlay.log if that is not writable)
+[setup] previous iterations (daemon-009, daemon-010, ...) were checked for cleanup above — look for '[cleanup] removed' lines
+RUN: /home/sd/daemon-011/build/daemon-boot   (the manager — click Load once Sober is up)
+     or ~/.local/bin/daemon-boot (ulauncher: type 'daemon')
+     terminal/no-GUI fallback: /home/sd/daemon-011/build/daemon-boot --console
+ls: cannot access '/home/sd/daemon-011/overlay.log': No such file or directory
+cat: /home/sd/daemon-011/overlay.log: No such file or directory
+daemon-011
+daemon-linux-001.txt
+daemon-linux-002.txt
+[sd@66 ~]$ 
+```
+
+semi successful, the overlay isnt on roblox for some reason
