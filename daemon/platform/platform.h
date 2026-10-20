@@ -189,13 +189,13 @@ bool ListFilesWithExt(const char* dir, const char* ext, std::vector<std::string>
 // 0..100. Returns false when the OS refused the file.
 bool PlayWav(const char* path, float volume);
 
-} // namespace platform
-
 // ---- raw mouse input ----------------------------------------------------------
 // Linux: uses SDL relative mouse mode (captures cursor, reports raw deltas).
 // Returns true if deltas were consumed (raw mouse is active).
-bool platform::TakeRawMouse(int& dx, int& dy);
+bool TakeRawMouse(int& dx, int& dy);
 // Resets/disables raw mouse capture so cursor is free again.
-void platform::DropRawMouse();
+void DropRawMouse();
 // True while raw mouse mode is active.
-bool platform::IsRawMouseActive();
+bool IsRawMouseActive();
+
+} // namespace platform

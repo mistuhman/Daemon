@@ -197,7 +197,7 @@ void Stop()
         }
         mover::FreezeWalk(mover::Freecam, false);
         mover::Release(mover::Freecam);
-        input::DropRawMouse();
+        platform::DropRawMouse();
     }
     s_on = false;
 }
@@ -253,7 +253,7 @@ void RunFreecam()
         }
         // Discard whatever motion accumulated before we started listening, or the
         // camera snaps on the first frame.
-        input::DropRawMouse();
+        platform::DropRawMouse();
         s_cam_addr = camera.address;
         s_dev_streak = 0;
         s_check_at = 0;
@@ -277,8 +277,9 @@ void RunFreecam()
     // loop iteration (not only on a step) and simply DISCARDED while the gate
     // is closed - TakeRawMouse is read-and-zero, so nothing accumulates and a
     // press never releases a stored jump.
-    float mdx = 0.0f, mdy = 0.0f;
-    const bool raw = input::TakeRawMouse(mdx, mdy);
+    int mdx_i = 0, mdy_i = 0;
+    const bool raw = platform::TakeRawMouse(mdx_i, mdy_i);
+    float mdx = (float)mdx_i, mdy = (float)mdy_i;
     const bool look = raw && !menu && platform::IsKeyDown(platform::key::RBUTTON);
     if (look) {
         constexpr float kSens = 0.0022f;   // radians per mouse count
