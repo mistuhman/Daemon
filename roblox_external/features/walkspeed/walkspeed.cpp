@@ -1,0 +1,54 @@
+#include <cmath>
+#include <chrono>
+#include "walkspeed.h"
+#include "globals.h"
+#include "memory.h"
+#include "cache.h"
+#include "offsets.h"
+
+namespace features {
+
+    static float cached_walkspeed = 16.0f;
+    static bool  active = false;
+
+    void RunWalkspeed() {
+        const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
+
+        // no keybind set -> always on while enabled; otherwise hold-to-use
+        bool want = walkspeed_enabled &&
+                    (walkspeed_keybind == 0 || platform::IsKeyDown(walkspeed_keybind));
+
+        if (want) {
+            if (!active) {
+                // remember the original so it can be restored when we stop
+                if (lp.valid && is_valid_address(lp.humanoid_address)) {
+                    float cur = read<float>(lp.humanoid_address + Offsets::Humanoid::Walkspeed);
+                    if (cur > 0.0f && cur <= 200.0f && fabsf(cur - walkspeed_value) > 0.5f)
+                        cached_walkspeed = cur;
+                    else if (cached_walkspeed <= 0.0f)
+                        cached_walkspeed = 16.0f;
+                }
+                active = true;
+            }
+            if (lp.valid && is_valid_address(lp.humanoid_address)) {
+                if (Offsets::Humanoid::Walkspeed) {
+                    write<float>(lp.humanoid_address + Offsets::Humanoid::Walkspeed, walkspeed_value);
+                }
+                if (Offsets::Humanoid::WalkspeedCheck) {
+                    write<float>(lp.humanoid_address + Offsets::Humanoid::WalkspeedCheck, walkspeed_value);
+                }
+            }
+        } else if (active) {
+            if (lp.valid && is_valid_address(lp.humanoid_address)) {
+                if (Offsets::Humanoid::Walkspeed) {
+                    write<float>(lp.humanoid_address + Offsets::Humanoid::Walkspeed, cached_walkspeed);
+                }
+                if (Offsets::Humanoid::WalkspeedCheck) {
+                    write<float>(lp.humanoid_address + Offsets::Humanoid::WalkspeedCheck, cached_walkspeed);
+                }
+            }
+            active = false;
+        }
+    }
+}
+
