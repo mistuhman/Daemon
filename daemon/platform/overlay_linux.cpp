@@ -315,58 +315,96 @@ static bool TryCreateWindow() {
         return false;
     }
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    // Alpha in the default framebuffer is what the compositor reads for
-    // per-pixel transparency on an ARGB visual.
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+    // Context creation is where the baseline-009 overlay died: the forced ARGB
+    // visual and GLX disagreed (SDL_GL_CreateContext: BadMatch -> headless, no
+    // window over the game at all). The visual is now GLX-validated
+    // (x11overlay::ArgbVisualId picks from the fbconfig list; 0 = nothing
+    // bindable => do not force). If creation still fails we retry once with
+    // SDL's own visual and relaxed attribs before going headless — a window
+    // over the game is the product; the tier of transparency is not. Every
+    // attempt logs what it asked for and what the driver said.
+    struct Attempt { bool force_visual; int depth, stencil, alpha; const char* what; };
+    static const Attempt kAttempts[] = {
+        { true,  24, 8, 8, "GLX ARGB32 visual + core3.0 d24 s8 a8" },
+        { false,  0, 0, 8, "SDL-chosen visual + core3.0 a8, depth/stencil relaxed" },
+    };
 
-    // Force the 32-bit ARGB visual BY ID. SDL2's X11 backend honours
-    // SDL_VIDEO_X11_WINDOW_VISUALID (string name works in every SDL2) before it
-    // asks GLX for a visual — upstream's supported override, and the direct
-    // answer to the field report "window visual is not 32-bit ARGB": the alpha-8
-    // GLX request alone still produced depth-24 windows.
-    const uint64_t argb_vid = x11overlay::ArgbVisualId();
-    if (argb_vid) {
-        char vid_buf[24];
-        snprintf(vid_buf, sizeof(vid_buf), "%llu", (unsigned long long)argb_vid);
-        SDL_SetHint("SDL_VIDEO_X11_WINDOW_VISUALID", vid_buf);
-    }
+    SDL_Window* win = nullptr;
+    SDL_GLContext ctx = nullptr;
+    for (const Attempt& a : kAttempts) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, a.depth);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, a.stencil);
+        // Alpha in the default framebuffer is what the compositor reads for
+        // per-pixel transparency on an ARGB visual.
+        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, a.alpha);
 
-    SDL_WindowFlags flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
-                                              SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_SKIP_TASKBAR |
-                                              SDL_WINDOW_ALLOW_HIGHDPI);
-    int gx = 0, gy = 0, gw = 0, gh = 0;
-    if (!platform::GameClientRect(gx, gy, gw, gh) || gw < 320 || gh < 240) {
-        SDL_DisplayMode dm{};
-        if (SDL_GetDesktopDisplayMode(0, &dm) == 0) { gx = 0; gy = 0; gw = dm.w; gh = dm.h; }
-        else { gx = 0; gy = 0; gw = 1280; gh = 720; }
+        // Force the 32-bit ARGB visual BY ID. SDL2's X11 backend honours
+        // SDL_VIDEO_X11_WINDOW_VISUALID (string name works in every SDL2) before it
+        // asks GLX for a visual — upstream's supported override, and the direct
+        // answer to the field report "window visual is not 32-bit ARGB": the alpha-8
+        // GLX request alone still produced depth-24 windows. Cleared between
+        // attempts — a leftover force would replay the failure it caused.
+        SDL_ResetHint("SDL_VIDEO_X11_WINDOW_VISUALID");
+        if (a.force_visual) {
+            const uint64_t argb_vid = x11overlay::ArgbVisualId();
+            if (argb_vid) {
+                char vid_buf[24];
+                snprintf(vid_buf, sizeof(vid_buf), "%llu", (unsigned long long)argb_vid);
+                SDL_SetHint("SDL_VIDEO_X11_WINDOW_VISUALID", vid_buf);
+            } else {
+                LogLine("Daemon: no GLX-bindable 32-bit ARGB visual — not forcing one (see ArgbVisualId)");
+            }
+        }
+
+        int gx = 0, gy = 0, gw = 0, gh = 0;
+        if (!platform::GameClientRect(gx, gy, gw, gh) || gw < 320 || gh < 240) {
+            SDL_DisplayMode dm{};
+            if (SDL_GetDesktopDisplayMode(0, &dm) == 0) { gx = 0; gy = 0; gw = dm.w; gh = dm.h; }
+            else { gx = 0; gy = 0; gw = 1280; gh = 720; }
+        }
+        SDL_WindowFlags flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
+                                                  SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_SKIP_TASKBAR |
+                                                  SDL_WINDOW_ALLOW_HIGHDPI);
+        win = SDL_CreateWindow("Daemon", gx, gy, gw, gh, flags);
+        if (!win) {
+            LogLine("Daemon: SDL_CreateWindow failed (%s): %s", a.what, SDL_GetError());
+            continue;
+        }
+        s_geom_x = gx; s_geom_y = gy; s_geom_w = gw; s_geom_h = gh;
+        s_geom_valid = true;
+        SDL_SetWindowTitle(win, "Daemon");
+        SetWindowIcon(win);
+
+        ctx = SDL_GL_CreateContext(win);
+        if (!ctx) {
+            LogLine("Daemon: SDL_GL_CreateContext failed (%s): %s", a.what, SDL_GetError());
+            SDL_DestroyWindow(win);
+            win = nullptr;
+            continue;
+        }
+        if (SDL_GL_MakeCurrent(win, ctx) != 0) {
+            LogLine("Daemon: SDL_GL_MakeCurrent failed (%s): %s", a.what, SDL_GetError());
+            SDL_GL_DeleteContext(ctx);
+            SDL_DestroyWindow(win);
+            win = nullptr;
+            ctx = nullptr;
+            continue;
+        }
+        LogLine("Daemon: overlay window up (%s)", a.what);
+        break;
     }
-    SDL_Window* win = SDL_CreateWindow("Daemon", gx, gy, gw, gh, flags);
-    if (!win) {
-        LogLine("Daemon: SDL_CreateWindow failed: %s — headless", SDL_GetError());
+    if (!win || !ctx) {
+        LogLine("Daemon: no GL context could be created — headless (the two attempts above name the driver errors)");
+        if (win) SDL_DestroyWindow(win);
         SDL_Quit();
         return false;
     }
     s_overlay_mode = true;
-    s_geom_x = gx; s_geom_y = gy; s_geom_w = gw; s_geom_h = gh;
-    s_geom_valid = true;
-    SDL_SetWindowTitle(win, "Daemon");
-    SetWindowIcon(win);
-
-    SDL_GLContext ctx = SDL_GL_CreateContext(win);
-    if (!ctx) {
-        LogLine("Daemon: SDL_GL_CreateContext failed: %s — headless", SDL_GetError());
-        SDL_DestroyWindow(win);
-        SDL_Quit();
-        return false;
-    }
-    SDL_GL_MakeCurrent(win, ctx);
     SDL_GL_SetSwapInterval(1);
 
     ImGui::CreateContext();

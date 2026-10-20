@@ -716,14 +716,90 @@ bool ArgbVisualAvailable()
     return XMatchVisualInfo(d, DefaultScreen(d), 32, TrueColor, &vi) != 0;
 }
 
+// GLX-validated ARGB visual. The overlay FORCES this visual id on SDL's
+// window (SDL_VIDEO_X11_WINDOW_VISUALID) so the compositor sees 32-bit ARGB
+// for per-pixel transparency. The forced visual must ALSO be one GLX can bind
+// a context to — XMatchVisualInfo alone is GLX-blind, and at baseline-009
+// exactly that mismatch made SDL_GL_CreateContext die with
+// "BadMatch (invalid parameter attributes)" and the overlay fall headless.
+// So the id now comes FROM the GLX fbconfig list: windowable RGBA,
+// double-buffered, alpha >= 8, whose GLX_VISUAL_ID resolves to a 32-bit
+// TrueColor visual. Depth/stencil are requested first and then relaxed;
+// alpha and the 32-bit visual never are (a non-alpha window is not an
+// overlay). No GLX-bindable visual => return 0 and let SDL pick its own.
+#if defined(HAS_SDL_OVERLAY) && defined(__has_include)
+#  if __has_include(<GL/glx.h>)
+#    define DAEMON_HAVE_GLX 1
+#    include <GL/glx.h>
+#  endif
+#endif
+
+#ifdef DAEMON_HAVE_GLX
+static bool GlxArgbVisual(Display* d, int screen, XVisualInfo* out)
+{
+    static const int kAttribsDepth[] = {
+        GLX_X_RENDERABLE,  True,
+        GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+        GLX_RENDER_TYPE,   GLX_RGBA_BIT,
+        GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
+        GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8,
+        GLX_ALPHA_SIZE, 8,
+        GLX_DOUBLEBUFFER, True,
+        GLX_DEPTH_SIZE, 24,
+        GLX_STENCIL_SIZE, 8,
+        None
+    };
+    static const int kAttribsRelaxed[] = {
+        GLX_X_RENDERABLE,  True,
+        GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+        GLX_RENDER_TYPE,   GLX_RGBA_BIT,
+        GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
+        GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8,
+        GLX_ALPHA_SIZE, 8,
+        GLX_DOUBLEBUFFER, True,
+        None
+    };
+    const int* const chains[] = { kAttribsDepth, kAttribsRelaxed };
+    for (const int* attribs : chains) {
+        int n = 0;
+        GLXFBConfig* cfgs = glXChooseFBConfig(d, screen, attribs, &n);
+        if (!cfgs) continue;
+        for (int i = 0; i < n; ++i) {
+            int vid = 0;
+            if (glXGetFBConfigAttrib(d, cfgs[i], GLX_VISUAL_ID, &vid) != 0 || !vid) continue;
+            XVisualInfo tmpl{};
+            tmpl.visualid = (VisualID)vid;
+            int got = 0;
+            XVisualInfo* vi = XGetVisualInfo(d, VisualIDMask, &tmpl, &got);
+            if (vi && got > 0 && vi->depth == 32 && vi->c_class == TrueColor) {
+                *out = *vi;
+                XFree(vi);
+                XFree(cfgs);
+                return true;
+            }
+            if (vi) XFree(vi);
+        }
+        XFree(cfgs);
+    }
+    return false;
+}
+#endif
+
 uint64_t ArgbVisualId()
 {
     std::lock_guard<std::mutex> lk(g_ctl_mutex);
     Display* d = Ctl();
     if (!d) return 0;
     XVisualInfo vi{};
+#ifdef DAEMON_HAVE_GLX
+    if (GlxArgbVisual(d, DefaultScreen(d), &vi)) return (uint64_t)vi.visualid;
+    // No GLX-bindable 32-bit visual. Returning the GLX-blind XMatchVisualInfo
+    // id here is precisely the baseline-009 BadMatch — do not force.
+    return 0;
+#else
     if (!XMatchVisualInfo(d, DefaultScreen(d), 32, TrueColor, &vi)) return 0;
     return (uint64_t)vi.visualid;
+#endif
 }
 
 // Follow-tick stacking guard: trust the EWMH stacking list first, and only pay

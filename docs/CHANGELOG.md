@@ -7,6 +7,35 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     PAYLOAD 010 — THE OVERLAY WINDOW FIX (baseline-009 gap #1) and the
+         crash log (gap #2's first half). "Overlay didn't launch over Sober"
+         is now named to the line: ArgbVisualId() picked the 32-bit ARGB X
+         visual with XMatchVisualInfo — GLX-blind — and the forced visual
+         then made SDL_GL_CreateContext die with "BadMatch (invalid
+         parameter attributes)": GLX cannot bind a context to a visual it
+         never offered. The id now comes FROM the GLX fbconfig list
+         (glXChooseFBConfig: windowable, RGBA, double-buffered, alpha>=8;
+         depth/stencil requested then relaxed; and the GLX_VISUAL_ID must
+         resolve to a 32-bit TrueColor visual). No bindable visual => no
+         force at all and SDL picks its own; window creation gained a second
+         attempt (SDL-chosen visual, relaxed depth/stencil) before headless,
+         every attempt logs what it requested and what the driver said, and
+         the visual-id hint is cleared between attempts (SDL_ResetHint —
+         a leftover force replays the failure it caused). Gap #2: the
+         operator report is that SOBER died on the baseplate — target-
+         process death — so the write path / false-positive offset
+         admission stays suspect; bootcore::StartOverlay now captures the
+         overlay's stdout+stderr to overlay.log beside the exe so the next
+         crash names itself. Compile-proven against REAL headers fetched
+         via codeload/API into /tmp (libX11/xorgproto/libXfixes, SDL
+         2.30.10, Mesa glx.h+glxext.h from the XQuartz/gl4es copies) — six
+         shapes at -Wall -Wextra: platform_linux with X11+XFixes+SDL+GLX
+         (new picker), with X11 alone, and as stubs; overlay_linux with
+         SDL+GL and headless; bootstrap_core. The real SDL headers earned
+         their keep on the first compile: the clear-the-hint call is
+         SDL_ResetHint, not SDL_UnsetHint. Full build + boot smoke 7/7 +
+         --checks=full 5/5 before packing. Frozen courier untouched.
+```
 HEAD     THE BUILD RECEIPT (2log.txt) IS EXPLAINED, FIXED AT ITS CAUSE, AND
          THE GATE THAT WOULD HAVE CAUGHT IT NOW ACTUALLY RUNS. The operator's
          latest build receipt — committed to main as 2log.txt — is the link
