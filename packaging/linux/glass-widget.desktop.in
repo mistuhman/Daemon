@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Glass Widget
+GenericName=Roblox External Overlay
+Comment=Standalone transparent overlay for Roblox (ESP, aimbot, movement)
+Exec=glass-widget %U
+Icon=glass-widget
+Terminal=false
+Categories=Game;Utility;
+Keywords=roblox;overlay;esp;
+StartupNotify=true
+StartupWMClass=glass-widget.exe
+X-AppImage-Version=@VERSION@

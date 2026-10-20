@@ -1,0 +1,170 @@
+# =============================================================================
+#  build - the repo's single, authoritative app compiler.
+#
+#  Every push, every PR, every tag, on demand, and nightly: the same two
+#  artifacts get produced by the same `make` targets a developer runs locally
+#  (Makefile -> packaging/windows/build_exe.ps1 + packaging/linux/build_appimage.sh)
+#  and both are gated by packaging/verify.sh. A tag push additionally attaches
+#  them to a GitHub Release.
+# =============================================================================
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"   # Monday 07:00 UTC - catch toolchain/offset rot
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARTIFACT_RETENTION_DAYS: 30
+
+jobs:
+  # ---------------------------------------------------------------- version --
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }     # tags, for packaging/version.sh
+      - id: v
+        run: |
+          v="$(packaging/version.sh)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "::notice title=version::$v"
+
+  # ------------------------------------------------------------------- lint --
+  lint:
+    name: lint packaging scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash syntax
+        run: |
+          for f in packaging/version.sh packaging/verify.sh \
+                   packaging/linux/build_appimage.sh packaging/linux/AppRun.in; do
+            bash -n "$f" && echo "ok  $f"
+          done
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning packaging/version.sh packaging/verify.sh \
+                                packaging/linux/build_appimage.sh
+      - name: powershell syntax
+        shell: pwsh
+        run: |
+          foreach ($f in @('packaging/version.ps1','packaging/windows/build_exe.ps1')) {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $f), [ref]$null, [ref]$errs)
+            if ($errs) { $errs | ForEach-Object { Write-Error $_ }; exit 1 }
+            Write-Host "ok  $f"
+          }
+
+  # ---------------------------------------------------------- windows .exe --
+  windows-exe:
+    name: compile .exe
+    needs: [version, lint]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: microsoft/setup-msbuild@v2
+      - name: make exe
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p dist/logs
+          make exe VERSION="${{ needs.version.outputs.version }}" 2>&1 | tee dist/logs/make.log
+      # Annotations are readable without downloading the raw log, so a failed
+      # compile always says why right on the run page.
+      - name: surface failure
+        if: failure()
+        shell: bash
+        run: |
+          log=dist/logs/make.log
+          # Real diagnostics first (compiler/linker errors), tail only as a
+          # fallback - GitHub shows at most ~10 annotations.
+          lines="$(grep -aiE ' error [A-Z]+[0-9]+|error:|fatal error|ERROR:' "$log" 2>/dev/null | head -n 8)"
+          [ -z "$lines" ] && lines="$(tail -n 8 "$log" 2>/dev/null)"
+          printf '%s\n' "$lines" | sed 's/::/:/g' | while IFS= read -r l; do
+            [ -n "$l" ] && echo "::error title=make exe::$l"
+          done
+          exit 1
+      - name: make verify
+        shell: bash
+        run: packaging/verify.sh --windows
+      - name: upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msbuild-log
+          path: dist/logs/*
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glass-widget-windows-${{ needs.version.outputs.version }}
+          path: dist/windows/glass-widget/**
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glass-widget-windows-zip
+          path: dist/windows/*.zip
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  # ------------------------------------------------------ linux .AppImage --
+  linux-appimage:
+    name: compile .AppImage
+    needs: [version, windows-exe]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/download-artifact@v4
+        with:
+          name: glass-widget-windows-${{ needs.version.outputs.version }}
+          path: payload
+      - name: tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq desktop-file-utils fuse3
+      - name: make appimage
+        run: make appimage EXE="$PWD/payload/glass-widget.exe" VERSION="${{ needs.version.outputs.version }}"
+      - name: make verify
+        run: packaging/verify.sh --linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glass-widget-appimage-${{ needs.version.outputs.version }}
+          path: dist/linux/*.AppImage
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  # ---------------------------------------------------------------- release --
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, windows-exe, linux-appimage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - run: find artifacts -type f -printf '%p  %s bytes\n'
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: glass-widget ${{ needs.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.AppImage
+            artifacts/**/*.zip
