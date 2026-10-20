@@ -1,4 +1,4 @@
-# Linux Port Plan — roblox-external on Void Linux (Sober)
+# Linux Port Plan — daemon on Void Linux (Sober)
 
 > **Status:** planning deep-dive, **not** implementation-complete.
 > This doc is the thinking artifact the operator asked for: *spend tokens, be thorough*.
@@ -7,7 +7,7 @@
 > replaced, (3) how the replacement works PID-local, and (4) the CI → Void testing
 > ladder that gates any load onto the operators' machines.
 
-**Branch:** `arena/b83aa5e5-roblox-external` @ `1177392`  
+**Branch:** `arena/b83aa5e5-daemon` @ `1177392`  
 **Target:** Void Linux ×2 (glibc + musl, X11 vs Wayland), Flatpak Sober  
 **CI gate:** Ubuntu-latest-equivalent prelude log captured below (§1)  
 **Date:** 2026-10-19
@@ -18,11 +18,11 @@
 
 | Windows today | Linux target (this plan) |
 |---|---|
-| `roblox_external.slnx` / MSVC / DX11 | `CMakeLists.txt` / `g++-12` (and `clang++` CI) / SDL2 + OpenGL overlay |
+| `daemon.slnx` / MSVC / DX11 | `CMakeLists.txt` / `g++-12` (and `clang++` CI) / SDL2 + OpenGL overlay |
 | `platform_win.cpp`: NT syscalls, PEB, `ReadProcessMemory` | `platform_linux.cpp`: `process_vm_readv/writev`, `/proc` walk, `_NET_WM_PID` lookups |
 | `offsets.h` (392 mutable globals via `kSlots`) + `offsets_live.cpp` (4 version + 4 offset remotes on WinHTTP → curl) + `offsets_fallback.json` (399 entries v43103) | `offsets_dynamic` : PID-local scanner — Sober PID → `libroblox.so` `r-xp` base → signature scan TaskScheduler → RenderJob → DataModel chain, then derive the 392 fields; cached per launch, zero network |
 | Overlay: DX11 transparent HWND + ImGui + `WH_KEYBOARD_LL` hook | X11 `_NET_WM_PID` + XFixes overlay or SDL2 borderless GL, XInput/XTest or `uinput` for input, `media_tracker` → PipeWire/Pulse `libpulse-simple` |
-| Courier: PowerShell mirror (`xbps-fetch` doc template exists, not wired) | Same courier, sh variant `roblox-external-compiler-001.txt` → CI Ubuntu → `xbps-fetch` on Void |
+| Courier: PowerShell mirror (`xbps-fetch` doc template exists, not wired) | Same courier, sh variant `daemon-compiler-001.txt` → CI Ubuntu → `xbps-fetch` on Void |
 
 **Why offsets must go:** every Roblox bump moves `Primitive::Rotation` (0xb0→0xc8→…), `VisualEngine::Pointer` (0x846f768→…), `TaskScheduler::Pointer` etc. The live fetcher (`offsets_live.cpp`) races three mirrors with a 25 s budget; when none has the bump yet the client hangs. On Sober the hang is worse: `libroblox.so` is an ELF, not a PE — Windows PEs never had valid Sober offsets in the first place.
 
@@ -36,14 +36,14 @@
 
 ### 1.1 What the CI job is
 
-`mirror/files/roblox-external-compiler-001.txt` is the sh counterpart to the `.ps1`: a self-contained base64+gzip+tar payload (sha-gated, fail-closed) carrying `compiler/` (256 files). On `ubuntu-latest` (GitHub Actions, 24.04, `ubuntu-noble`, g++13) we run the one-liner that the file itself documents:
+`mirror/files/daemon-compiler-001.txt` is the sh counterpart to the `.ps1`: a self-contained base64+gzip+tar payload (sha-gated, fail-closed) carrying `compiler/` (256 files). On `ubuntu-latest` (GitHub Actions, 24.04, `ubuntu-noble`, g++13) we run the one-liner that the file itself documents:
 
 ```sh
-f="/tmp/roblox-external-compiler-001.txt"
+f="/tmp/daemon-compiler-001.txt"
 d="/tmp/extract"
 rm -rf "$d"
 curl -fsSL \
-  https://raw.githubusercontent.com/Glockerz/roblox-external/arena/1239e467-roblox-external/mirror/files/roblox-external-compiler-001.txt \
+  https://raw.githubusercontent.com/Glockerz/daemon/arena/1239e467-daemon/mirror/files/daemon-compiler-001.txt \
   -o "$f"
 sh "$f" "$d"   # must print COMPILER001_DONE=YES
 ```
@@ -55,17 +55,17 @@ sh "$f" "$d"   # must print COMPILER001_DONE=YES
 The sandbox is `Debian 12 bookworm`, kernel `6.1.158+`, `g++ 12.2.0` — one tick behind `ubuntu-latest`'s `g++13`, but the extraction + sha path is identical (same `base64/tar/sha256sum/mktemp`).
 
 ```
-$ sh /home/user/roblox-external/mirror/files/roblox-external-compiler-001.txt /tmp/roblox-prelude-test
+$ sh /home/user/daemon/mirror/files/daemon-compiler-001.txt /tmp/roblox-prelude-test
 ARCHIVE_SHA256_GOT=d81fbe5f410409ceac673693a93cd63e3d76fa45a619e5c19ab87576f5c3c068
 ARCHIVE_SHA256_WANT=d81fbe5f410409ceac673693a93cd63e3d76fa45a619e5c19ab87576f5c3c068
 PAYLOAD_SHA256_GOT=619965b3a6dc5d702bec89f267fb9ee5f45e161026a19131bc480abed2e6a344
 COMPILER001_DONE=YES
 EXIT=0
-$ ls /tmp/roblox-prelude-test/compiler/windows/core/roblox_external/
+$ ls /tmp/roblox-prelude-test/compiler/windows/core/daemon/
 main.cpp  cache.cpp  platform/  features/  offsets.h  offsets_fallback.json ...
 ```
 
-**Known finding — path bug inside the payload:** `compiler/test/test_in_sandbox.sh` fails its first check (`test -f ../README.md`) because it assumes it is run from `compiler/test` with `../README.md` resolving — but `compiler/README.md` is the real location, `test/verify_package.sh` passes. `build_and_package.sh` aborts at phase-1 due to `set -e`. This is **not** a payload-sha failure; it is a script-relative-path bug that is invisible on Windows (the Windows path `compiler/windows/test/verify_structure.bat` is unrelated). **Action for CI:** patch `test_in_sandbox.sh` to `test -f ../../README.md` or run it with `SCRIPT_DIR="$(cd ... )"` aware paths — one-line PR against `mirror/files/roblox-external-compiler-001.{ps1,txt}` after this note lands. The `PAYLOAD_SHA256` will then rotate; the courier's two-phase `vsha` check will catch any paste-host bit-rot.
+**Known finding — path bug inside the payload:** `compiler/test/test_in_sandbox.sh` fails its first check (`test -f ../README.md`) because it assumes it is run from `compiler/test` with `../README.md` resolving — but `compiler/README.md` is the real location, `test/verify_package.sh` passes. `build_and_package.sh` aborts at phase-1 due to `set -e`. This is **not** a payload-sha failure; it is a script-relative-path bug that is invisible on Windows (the Windows path `compiler/windows/test/verify_structure.bat` is unrelated). **Action for CI:** patch `test_in_sandbox.sh` to `test -f ../../README.md` or run it with `SCRIPT_DIR="$(cd ... )"` aware paths — one-line PR against `mirror/files/daemon-compiler-001.{ps1,txt}` after this note lands. The `PAYLOAD_SHA256` will then rotate; the courier's two-phase `vsha` check will catch any paste-host bit-rot.
 
 **CI prelude template (to paste in `.github/workflows/linux-prelude.yml`):**
 
@@ -73,7 +73,7 @@ main.cpp  cache.cpp  platform/  features/  offsets.h  offsets_fallback.json ...
 name: linux-prelude
 on:
   push:
-    paths: ['mirror/files/**', 'roblox_external/platform/platform_linux.cpp', 'roblox_external/platform/sober_scanner.*']
+    paths: ['mirror/files/**', 'daemon/platform/platform_linux.cpp', 'daemon/platform/sober_scanner.*']
   workflow_dispatch:
 jobs:
   prelude:
@@ -83,17 +83,17 @@ jobs:
       - name: extract + verify (the gate)
         run: |
           set -u
-          f=/tmp/roblox-external-compiler-001.txt
+          f=/tmp/daemon-compiler-001.txt
           d=/tmp/extract
           rm -rf "$d"
-          cp mirror/files/roblox-external-compiler-001.txt "$f"
+          cp mirror/files/daemon-compiler-001.txt "$f"
           sh "$f" "$d"
           echo "---- FILE COUNT ----"
           find "$d" -type f | wc -l
           echo "---- void stub ----"
           cat "$d/compiler/void/compile.sh" || true
           echo "---- linux platform seam syntax ----"
-          g++ -std=c++17 -fsyntax-only -I roblox_external roblox_external/platform/platform_linux.cpp
+          g++ -std=c++17 -fsyntax-only -I daemon daemon/platform/platform_linux.cpp
           echo "PRELUDE_DONE=YES"
 ```
 
@@ -111,7 +111,7 @@ The CI box has no Sober, no `libroblox.so`, no Flatpak, no Vulkan drivers. It pr
 
 ```
 198 files (depth ≤4), 45 committed PNGs (glass-obsidian shots)
-roblox_external/          Windows external proper
+daemon/          Windows external proper
   main.cpp                FeatureLoop first call = mover::Tick, Sleep(1) pump, ~500-1000 it/s
   game.h/.cpp             ReadDataModel via VisualEngine→FakeDataModel::RealDataModel + World
   cache.h/.cpp            64-entity zero-copy snapshots (shared_ptr<vector>) every 16 ms,
@@ -291,7 +291,7 @@ CE's `.CT` table stores signatures like `48 8B 0D ? ? ? ? 48 85 C9 74 ? 48 8B 01
 3. `memmem` with wildcards for the non-`?` bytes; on hit, resolve RIP-relative: `target = hit + sig_len + int32(disp)`.
 4. Validate: read 8 bytes at `target`, check they point inside a readable region and the pointee has a plausible vtable/ClassDescriptor pattern.
 
-We replicate this with a smaller signature set — only the chains roblox-external needs (§6.2).
+We replicate this with a smaller signature set — only the chains daemon needs (§6.2).
 
 ### 5.4 What we adopt unchanged, what we don't
 
@@ -311,7 +311,7 @@ We replicate this with a smaller signature set — only the chains roblox-extern
 ### 6.1 Contract
 
 ```cpp
-// roblox_external/platform/sober_scanner.h
+// daemon/platform/sober_scanner.h
 #pragma once
 #include <cstdint>
 #include <string>
@@ -419,17 +419,17 @@ std::string fetchstring(uintptr_t container) {
 ### 6.6 Files
 
 ```
-new  roblox_external/platform/sober_scanner.h
-new  roblox_external/platform/sober_scanner.cpp  // FindSoberPid, LibRobloxBase, Scan, TryPooledString
-edit roblox_external/platform/platform_linux.cpp  // +LibRobloxBase via r-xp, +Flatpak cgroup walk,
+new  daemon/platform/sober_scanner.h
+new  daemon/platform/sober_scanner.cpp  // FindSoberPid, LibRobloxBase, Scan, TryPooledString
+edit daemon/platform/platform_linux.cpp  // +LibRobloxBase via r-xp, +Flatpak cgroup walk,
                                                  //  process_vm_readv chunking, /proc/pid/mem fallback
-new  roblox_external/offsets_dynamic.h            // PatchOffsetsFromScan(ScanResult)
-edit roblox_external/offsets_live.cpp             // #ifndef __linux__ guard the WinHTTP path;
+new  daemon/offsets_dynamic.h            // PatchOffsetsFromScan(ScanResult)
+edit daemon/offsets_live.cpp             // #ifndef __linux__ guard the WinHTTP path;
                                                  //  on Linux delegate to offsets_dynamic first,
                                                  //  keep live fetch as compile-time opt-in OFF
-edit roblox_external/game.cpp                     // ReadDataModel tries ScanResult::dataModel before
+edit daemon/game.cpp                     // ReadDataModel tries ScanResult::dataModel before
                                                  //  VisualEngine::Pointer global
-edit roblox_external/cache.cpp                    // world detect already has tree fallback; add
+edit daemon/cache.cpp                    // world detect already has tree fallback; add
                                                  //  Sober Primitive::Flags byte check
 new  tools/sober_sig_refresh.py                  // dump TaskScheduler neighbourhood for UC paste
 new  .github/workflows/linux-prelude.yml         // §1.3
@@ -500,9 +500,9 @@ groups  # expect video,input if uinput needed
 
 | Step | Command | Success | Failure points to |
 |---|---|---|---|
-| 0 | `xbps-fetch https://<paste>/roblox-external-compiler-001.txt -o /tmp/payload && sh /tmp/payload /tmp/extract` | `COMPILER001_DONE=YES` | Courier mirror expired → operator re-triggers `.github/workflows/mirror-upload.yml` |
-| 1 | `g++ -std=c++17 -fsyntax-only -I roblox_external roblox_external/platform/platform_linux.cpp` | no error | `process_vm_readv` header missing → `xbps-install glibc-devel` |
-| 2 | `g++ -std=c++17 -I roblox_external roblox_external/platform/platform_linux.cpp tools/sober_probe.cpp -o /tmp/probe && /tmp/probe` | prints `sober pid=<n> base=0x...` | Sober not running / maps lacks `libroblox.so` → Sober install preflight |
+| 0 | `xbps-fetch https://<paste>/daemon-compiler-001.txt -o /tmp/payload && sh /tmp/payload /tmp/extract` | `COMPILER001_DONE=YES` | Courier mirror expired → operator re-triggers `.github/workflows/mirror-upload.yml` |
+| 1 | `g++ -std=c++17 -fsyntax-only -I daemon daemon/platform/platform_linux.cpp` | no error | `process_vm_readv` header missing → `xbps-install glibc-devel` |
+| 2 | `g++ -std=c++17 -I daemon daemon/platform/platform_linux.cpp tools/sober_probe.cpp -o /tmp/probe && /tmp/probe` | prints `sober pid=<n> base=0x...` | Sober not running / maps lacks `libroblox.so` → Sober install preflight |
 | 3 | `cmake -B build-void -DCMAKE_BUILD_TYPE=Release && cmake --build build-void` | `external` ELF present | SDL2-missing → `xbps-install SDL2` |
 | 4 | `./build-void/external --self-test` (new: scan without overlay, print `ScanResult::diag`) | `ok=YES task=0x... data=0x...` | Sig 1 not found → paste new pattern from §6.2 tool |
 | 5 | `./build-void/external` (overlay) → launch Sober place → check debug page `pos writes` | `600+` writes/s, no hang on DataModel | Mover pacing → `sched_yield` gap |
@@ -519,25 +519,25 @@ groups  # expect video,input if uinput needed
 
 ### 9.1 Windows today
 
-`roblox_external.vcxproj` + `.slnx`, MSVC only, `mirror/files/roblox-external-compiler-001.ps1` (PowerShell) delivers the Windows compiler. Tested via `setup.bat` wizard.
+`daemon.vcxproj` + `.slnx`, MSVC only, `mirror/files/daemon-compiler-001.ps1` (PowerShell) delivers the Windows compiler. Tested via `setup.bat` wizard.
 
 ### 9.2 Linux addition
 
 ```
 CMakeLists.txt (root)
   add_executable(external
-    roblox_external/main.cpp
-    roblox_external/platform/platform_linux.cpp
-    roblox_external/platform/sober_scanner.cpp
-    roblox_external/cache.cpp
-    roblox_external/game.cpp
-    roblox_external/memory.cpp
-    roblox_external/features/movement/mover.cpp
+    daemon/main.cpp
+    daemon/platform/platform_linux.cpp
+    daemon/platform/sober_scanner.cpp
+    daemon/cache.cpp
+    daemon/game.cpp
+    daemon/memory.cpp
+    daemon/features/movement/mover.cpp
     glass-obsidian/src/*.cpp
     glass-obsidian/third_party/imgui/*.cpp
     overlay_linux.cpp          # SDL2+GL, replaces overlay.cpp on __linux__
   )
-  target_include_directories(external PRIVATE roblox_external glass-obsidian/include)
+  target_include_directories(external PRIVATE daemon glass-obsidian/include)
   find_package(SDL2 REQUIRED)   # or pkg_check_modules(SDL2 sdl2)
   find_package(OpenGL REQUIRED)
   target_link_libraries(external SDL2::SDL2 OpenGL::GL X11 Xtst pulse-simple)
@@ -547,7 +547,7 @@ CI already runs `g++ -fsyntax-only`; full CMake build joins `linux-prelude.yml` 
 
 ### 9.3 Courier — frozen, per `docs/frozen-tools.sha256`
 
-The courier mechanism (`mirror-upload.yml`, host ladder `pasters/dpaste/cnet/tmpfiles/0x0/x0`, 2 passes, `mirror-state.txt` branch) is **frozen** — we don't touch it. The only payload change is adding `roblox-external-compiler-001.txt`'s next version with Linux CMake + scanner included. That payload's `ARCHIVE_SHA256` rotates; the courier's two-phase `vsha` (hash-after-upload) catches paste-host bit-rot — same as Windows.
+The courier mechanism (`mirror-upload.yml`, host ladder `pasters/dpaste/cnet/tmpfiles/0x0/x0`, 2 passes, `mirror-state.txt` branch) is **frozen** — we don't touch it. The only payload change is adding `daemon-compiler-001.txt`'s next version with Linux CMake + scanner included. That payload's `ARCHIVE_SHA256` rotates; the courier's two-phase `vsha` (hash-after-upload) catches paste-host bit-rot — same as Windows.
 
 Void fetch is `xbps-fetch -o /tmp/payload <url>` (not `curl -o`), then `sh /tmp/payload /tmp/extract` — `xbps-fetch` is in the courier template but not yet documented in the operator's one-liner; update `mirror/current-compiler` note.
 
@@ -573,13 +573,13 @@ Void fetch is `xbps-fetch -o /tmp/payload <url>` (not `curl -o`), then `sh /tmp/
 
 | Phase | Name | Gate | Files | Outcome |
 |---|---|---|---|---|
-| **P0** | **Prelude log** | `COMPILER001_DONE=YES` + `ARCHIVE_SHA256` match in this sandbox/U CI | `mirror/files/roblox-external-compiler-001.txt` (existing) + `linux-prelude.yml` | CI job green; operator has receipt to photograph |
+| **P0** | **Prelude log** | `COMPILER001_DONE=YES` + `ARCHIVE_SHA256` match in this sandbox/U CI | `mirror/files/daemon-compiler-001.txt` (existing) + `linux-prelude.yml` | CI job green; operator has receipt to photograph |
 | **P1** | Process discovery | `sober_probe` prints Sober PID + `libroblox.so` base on void-a | `platform_linux.cpp` (§6.3), `tools/sober_probe.cpp` (throwaway) | Sober PID/base proven without any feature |
 | **P2** | Signature scanner | `--self-test` prints `ok=YES task/data/world` on void-a, even when Sober restarted (ASLR) | `sober_scanner.h/.cpp`, `offsets_dynamic.h`, `mover` unchanged | No more static offsets hang; DataModel resolves locally |
 | **P3** | Overlay bring-up | SDL2 overlay shows menu on void-a (X11), ESP renders (even if game rect wrong) | `overlay_linux.cpp`, `CMakeLists.txt`, `glass-obsidian` unchanged | Operator sees menu, can open debug page |
-| **P3b** | Bootstrapper (dx9ware shape) | `roblox-external-boot` finds Sober, gates Load; Load = overlay locked to Sober + streamproof; lifecycle owned by the manager | `boot/` (core + gtk3 dlopen shim + window), `--locked`/`streamproof_watcher` in the overlay, `link_seam_check.sh` gate | Payload 013 + `docs/BOOTSTRAPPER.md`; photo = bootstrap window over a running Sober |
+| **P3b** | Bootstrapper (dx9ware shape) | `daemon-boot` finds Sober, gates Load; Load = overlay locked to Sober + streamproof; lifecycle owned by the manager | `boot/` (core + gtk3 dlopen shim + window), `--locked`/`streamproof_watcher` in the overlay, `link_seam_check.sh` gate | Payload 013 + `docs/BOOTSTRAPPER.md`; photo = bootstrap window over a running Sober |
 | **P4** | Feature loop | LIVE_CHECKLIST rows 1-6 PASS on void-a, then void-b (XWayland) | `game.cpp`/`cache.cpp`/`memory.cpp` Sober string branch, `mover` yield tuning | Whole external usable on Void via xbps-fetch |
-| **P5** | Courier refresh | `mirror-upload.yml` publishes new `.txt` with P2-4; `mirror-state.txt` updated, paste-host `vsha` green | `mirror/files/roblox-external-compiler-001.txt` next version, `frozen-tools.sha256` updated | Operators fetch via `xbps-fetch` one-liner, no manual git |
+| **P5** | Courier refresh | `mirror-upload.yml` publishes new `.txt` with P2-4; `mirror-state.txt` updated, paste-host `vsha` green | `mirror/files/daemon-compiler-001.txt` next version, `frozen-tools.sha256` updated | Operators fetch via `xbps-fetch` one-liner, no manual git |
 | **P6** | Hardening | second Void box (musl/Wayland) passes P2-4; Yama scope 1 + 0 tested; Vulkan drivers documented | `docs/LIVE_CHECKLIST.md` Linux column, `docs/ARCHITECTURE.md` platform §10 updated | Two-machine parity, handoff to operators |
 
 Each phase's gate is a **photographable receipt** — a log line or screenshot the operator sends back — not a verbal "looks good." This is the same contract LIVE_CHECKLIST enforces for Windows.
@@ -591,7 +591,7 @@ Each phase's gate is a **photographable receipt** — a log line or screenshot t
 **CI (now, this sandbox already did the Debian analogue):**
 
 ```sh
-cp mirror/files/roblox-external-compiler-001.txt /tmp/f
+cp mirror/files/daemon-compiler-001.txt /tmp/f
 rm -rf /tmp/extract && sh /tmp/f /tmp/extract && echo PRELUDE_DONE=YES
 # then patch test_in_sandbox.sh path bug, re-publish .txt, note new sha
 ```
@@ -600,7 +600,7 @@ rm -rf /tmp/extract && sh /tmp/f /tmp/extract && echo PRELUDE_DONE=YES
 
 ```sh
 # preflight (§8.2), then
-xbps-fetch https://<courier-url>/roblox-external-compiler-001.txt -o /tmp/payload
+xbps-fetch https://<courier-url>/daemon-compiler-001.txt -o /tmp/payload
 sh /tmp/payload /tmp/extract
 cat /tmp/extract/compiler/BUILD_WORKFLOW.md
 # P1-2: g++ fsyntax-only, sober_probe, ScanResult --self-test
@@ -610,21 +610,21 @@ cat /tmp/extract/compiler/BUILD_WORKFLOW.md
 **Agent (next commits on this branch):**
 
 1. `tools/sober_probe.cpp` + `platform/sober_scanner.h` skeleton (no signatures yet — structure only, compiles).
-2. `roblox_external/platform/platform_linux.cpp` §6.3 maps generalization (`libroblox.so` suffix match, Flatpak cgroup sniff).
+2. `daemon/platform/platform_linux.cpp` §6.3 maps generalization (`libroblox.so` suffix match, Flatpak cgroup sniff).
 3. `.github/workflows/linux-prelude.yml` (gated on `platform_linux.cpp` + `sober_scanner.*` + `mirror/files/**`).
 4. `CMakeLists.txt` (SDL2/OpenGL opt-in, off on Windows).
 
-None of these touch `mirror/files/roblox-external-compiler-001.*` until P2's Sig 1 is proven on void-a — per frozen-courier rule (§1.2) the payload only rotates after Void proof.
+None of these touch `mirror/files/daemon-compiler-001.*` until P2's Sig 1 is proven on void-a — per frozen-courier rule (§1.2) the payload only rotates after Void proof.
 
 ---
 
 ## 13 · Sources read for this plan
 
-- `roblox_external/platform/platform.h` + `platform_win.cpp` + `platform_linux.cpp` (`process_vm_readv`, `/proc` scan, r-xp base)
-- `roblox_external/offsets.h` + `offsets_fallback.json` + `offsets_live.h/.cpp` (392 fields, 4+4 mirrors, 25 s budget, pinned {VER})
-- `roblox_external/cache.h/.cpp` + `game.h/.cpp` + `memory.h/.cpp` + `process.h/.cpp` + `main.cpp` (DataModel→Players, zero-copy snapshots, mover single owner, FeatureLoop 1 ms)
+- `daemon/platform/platform.h` + `platform_win.cpp` + `platform_linux.cpp` (`process_vm_readv`, `/proc` scan, r-xp base)
+- `daemon/offsets.h` + `offsets_fallback.json` + `offsets_live.h/.cpp` (392 fields, 4+4 mirrors, 25 s budget, pinned {VER})
+- `daemon/cache.h/.cpp` + `game.h/.cpp` + `memory.h/.cpp` + `process.h/.cpp` + `main.cpp` (DataModel→Players, zero-copy snapshots, mover single owner, FeatureLoop 1 ms)
 - `docs/ARCHITECTURE.md` (§4.0 dual 0x48 motion blocks, hammering, LayoutSane), `docs/LIVE_CHECKLIST.md` (22 rows), `docs/frozen-tools.sha256`
-- `mirror/xbps-fetch-mirror-template.txt` + `mirror/files/roblox-external-compiler-001.ps1/.txt` + `compiler/build_and_package.sh` + `compiler/void/compile.sh` (courier, void placeholder)
+- `mirror/xbps-fetch-mirror-template.txt` + `mirror/files/daemon-compiler-001.ps1/.txt` + `compiler/build_and_package.sh` + `compiler/void/compile.sh` (courier, void placeholder)
 - `cheat-engine/cheat-engine/Cheat Engine/ceserver/api.c` (4738 L, CMD 9/10, process_vm_readv fastpath + ptrace fallback)
 - `cheat-engine/cheat-engine/ceserver/ceserver.h`, `wleeaf/cheat-engine-linux` (Qt6 native), `man7.org/process_vm_readv(2)` (iovec, ptrace_may_access)
 - `unknowncheats.me/forum/roblox/771298-release-sober-offsets` (idom, 75 offsets, TaskScheduler 0x7a0b720, RenderJob 0x30/0x1d0, string pooling) + `749668-sober-offsets`

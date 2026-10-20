@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------------
 #  tools/check_win_tu.sh  --  parse the host app's Win32 glue, off Windows
 # -----------------------------------------------------------------------------
-#  The app's UI half (roblox_external/ui/menu_ui.cpp) is platform-free and is
+#  The app's UI half (daemon/ui/menu_ui.cpp) is platform-free and is
 #  fully exercised by tools/menu_shots.cpp. The other half -- menu.cpp and
 #  friends -- is the part nobody can build here, and it is where a change to a
 #  shared struct quietly breaks: snprintf writing into a `const char*` field
@@ -27,12 +27,12 @@
 #
 #  tools/check_win_tu.sh                          # menu.cpp
 #  tools/check_win_tu.sh menu.cpp memory.cpp       # or any list of app-relative paths
-#  OBSIDIAN_APP_DIR=../roblox_external tools/check_win_tu.sh
+#  OBSIDIAN_APP_DIR=../daemon tools/check_win_tu.sh
 # -----------------------------------------------------------------------------
 set -u
 
 lib=$(cd "$(dirname "$0")/.." && pwd)                 # glass-obsidian/
-app=${OBSIDIAN_APP_DIR:-"$lib/../roblox_external"}
+app=${OBSIDIAN_APP_DIR:-\"$lib/../daemon\"}
 cc=${CXX:-g++}
 # menu.cpp is the default because it is the one TU that is *only* Win32 glue plus
 # the shared Snapshot struct. Everything else under features/ plus the core TUs
@@ -62,7 +62,7 @@ files=${*:-menu.cpp features/players/players.cpp features/config/config.cpp
 
 if [ ! -f "$app/menu.cpp" ]; then
     echo "host app not found at: $app"
-    echo "(this check is only useful next to the roblox-external checkout;"
+    echo "(this check is only useful next to the daemon checkout;"
     echo " set OBSIDIAN_APP_DIR to point at it)"
     exit 2
 fi
@@ -72,12 +72,12 @@ fails=0
 
 # The include-path trap this cannot otherwise see (comment lines are excluded, so a
 # TU explaining why it does NOT use std::thread is not a hit): the project puts $(ProjectDir) on
-#  the include path, so roblox_external/process.h SHADOWS the CRT <process.h>, and
+#  the include path, so daemon/process.h SHADOWS the CRT <process.h>, and
 # MSVC's <thread> includes <process.h> for _beginthreadex. The result is two errors
 # inside VC/tools/.../include/thread that name no project file at all. g++ here has a
 # real <thread> and no shadowing, so it cannot catch it -- hence a grep.
 if grep -rn "^#include <thread>\|std::thread\|std::async\|#include <future>" \
-        --include=*.cpp --include=*.h --include=*.hpp "$app" 2>/dev/null |
+        --include=*.cpp --include=*.h --include=*.hpp "$app" 2>/dev/null | \
         grep -v imgui | grep -vE ':[0-9]+: *(//|/\*|\*)' ; then
     echo "  ^^ those need the project's own thread start (CreateThread, as main.cpp and"
     echo "     cache.cpp do) or process.h has to stop shadowing the CRT header - see"

@@ -6,11 +6,7 @@ OUT=${1:?usage: pack_attach_probe.sh mirror/files/name.txt}
 SOURCE=$(mktemp)
 trap 'rm -f "$SOURCE"' EXIT HUP INT TERM
 # Inline the shared inspector so the small payload remains standalone.
-awk '/^#include "[.][.]\/roblox_external\/platform\/linux_elf.h"/ {
- while ((getline line < "roblox_external/platform/linux_elf.h") > 0)
-   if (line != "#pragma once") print line
- next
-} { print }' tools/sober_attach.cpp > "$SOURCE"
+awk '/^#include \"[.][.]\\/daemon\\/platform\\/linux_elf.h\"/ {\n while ((getline line < "daemon/platform/linux_elf.h") > 0)\n   if (line != "#pragma once") print line\n next\n} { print }' tools/sober_attach.cpp > "$SOURCE"
 SHA=$(sha256sum "$SOURCE" | cut -d' ' -f1)
 {
 cat <<'HEADER'

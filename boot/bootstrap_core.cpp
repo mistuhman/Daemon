@@ -37,14 +37,13 @@ int ReadYama()
     return v;
 }
 
-// The overlay binary, beside this executable. 'external' is the build-tree
-// name; 'roblox-external' is what assets/install.sh installs it as.
+// The overlay binary, beside this executable. 'daemon' is the build-tree
+// name; 'daemon' is what assets/install.sh installs it as.
 std::string OverlayPath()
 {
     const std::string dir = platform::ExeDir();
-    if (FileExists(dir + "external")) return dir + "external";
-    if (FileExists(dir + "roblox-external")) return dir + "roblox-external";
-    return dir + "external";
+    if (FileExists(dir + "daemon")) return dir + "daemon";
+    return dir + "daemon";
 }
 
 } // namespace
@@ -133,7 +132,7 @@ Status Poll()
     } else if (!s.overlay_file) {
         snprintf(s.line, sizeof(s.line), "Sober found — not ready");
         snprintf(s.detail, sizeof(s.detail),
-                 "no overlay binary (external / roblox-external) beside the bootstrapper — run setup.sh first");
+                 "no overlay binary (daemon) beside the bootstrapper — run setup.sh first");
     } else {
         snprintf(s.line, sizeof(s.line), "memory attached (pid %u) — shell ready", s.sober_pid);
         uintptr_t base = sober::LibRobloxBase(s.sober_pid);
@@ -165,7 +164,7 @@ bool StartOverlay(char* err, std::size_t errlen)
         // there, geometry following it. Its own process group so our Ctrl-C
         // does not race it; it exits on SIGTERM with its restore path.
         setsid();
-        const char* argv[] = { "external", "--locked", nullptr };
+        const char* argv[] = { "daemon", "--locked", nullptr };
         execv(exe.c_str(), (char* const*)argv);
         _exit(127);
     }

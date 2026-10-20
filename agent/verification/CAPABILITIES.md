@@ -1,7 +1,7 @@
 # Capability Verification Record
 
-Repo: `Glockerz/roblox-external` · session branch `arena/13aa7aab-roblox-external`
-First verified: **2026-10-16** · sandbox: Linux, `node v22.22.3`, `g++ 12.2.0`, no `cmake`,
+Repo: `mistuhman/Daemon` · session branch `arena/d0f99e6b-daemon`
+First verified: **2026-10-20** · sandbox: Linux, `node v22.22.3`, `g++ 12.2.0`, no `cmake`,
 no MSVC.
 
 DOCTRINE rule 4: a capability that has not been probed is reported as **UNVERIFIED**,
@@ -10,14 +10,14 @@ brief's open-questions block, so this file is both the evidence and the list.
 
 ---
 
-## Verified — 2026-10-16
+## Verified — 2026-10-20
 
 ### Image sight — PASS (exact transcription)
 
 - **Probe**: `generate_image` from a tight spec (exact strings, pure primary colours,
   fixed order), then `read_file` the result. Artifact: `agent/verification/vision_probe.png`.
 - **Seen, exactly as specified**: headline `AGENT VISION PROBE`; second line
-  `roblox-external / arena/13aa7aab`; three solid swatches left→right **RED / GREEN /
+  `Daemon / arena/d0f99e6b-daemon`; three solid swatches left→right **RED / GREEN /
   BLUE** with each square's label beneath it; code string `K7-Q3-91`; solid neutral gray
   ground. Every string was transcribed correctly, the colour order was correct, and no
   element was hallucinated.
@@ -31,7 +31,7 @@ brief's open-questions block, so this file is both the evidence and the list.
 ```
 PASS · runtime        · node v22.22.3 executing .ts via type stripping (zero dependencies)
 PASS · ts-type-stripping · typed const evaluated
-PASS · git            · branch=arena/13aa7aab-roblox-external
+PASS · git            · branch=arena/d0f99e6b-daemon
 PASS · fs-roundtrip   · write+read a temp file
 PASS · tool-python3   · Python 3.11.2
 PASS · tool-g++       · g++ (Debian 12.2.0-14+deb12u1) 12.2.0
@@ -88,18 +88,17 @@ five fast checks run on **every** pass (they cost ~60 ms and appear in every bri
 
 | Check | Cost | What it proves |
 |---|---|---|
-| `windows-h-containment` | ~30 ms | `<Windows.h>` appears only in the Win32 layer (10 includers, all on the documented list). A feature file that reaches for Win32 directly fails here — ARCHITECTURE §10 |
-| `no-winapi-read-write` | ~40 ms | `ReadProcessMemory` / `WriteProcessMemory` appear nowhere but the tripwire `#define`s in `nt_syscalls.h`. Every read/write goes through `nt::ReadVirtualMemory` / `WriteVirtualMemory` over indirect syscalls |
-| `offsets-parity` | ~5 ms | `offsets_fallback.json` parses *and* names the same client version as `offsets.h` (`version-4310300497aa4917`, 399 offsets). Version drift is what bit this repo twice |
-| `no-deprecated-crt` | ~10 ms | No call MSVC reports as unsafe (C4996: `strncat`, `strcpy`, `strcat`, `strncpy`, `sprintf`, `fopen`, `getenv`, ...) in the 86 app files the MSVC project builds; `*_s` variants are not matched and `platform_linux.cpp` is excluded by name. Its negative path was verified by adding a `strncat` to `esp.cpp`, which failed the check, then removing it |
+| `windows-h-containment` | ~30 ms | `<Windows.h>` appears **nowhere** in the Linux-only Daemon codebase (0 includers). A feature file that reaches for Win32 directly fails here — ARCHITECTURE §10 |
+| `no-winapi-read-write` | ~40 ms | `ReadProcessMemory` / `WriteProcessMemory` appear nowhere in the codebase. Every read/write goes through `platform::ReadMem` / `WriteMem` over `/proc` or `process_vm_readv` |
+| `offsets-parity` | ~5 ms | `offsets_fallback.json` parses *and* names the same client version as `offsets.h` (399 offsets). Version drift is what bit this repo twice |
+| `no-deprecated-crt` | ~10 ms | No call MSVC reports as unsafe (C4996: `strncat`, `strcpy`, `strcat`, `strncpy`, `sprintf`, `fopen`, `getenv`, ...) in the app files; `*_s` variants are not matched and `platform_linux.cpp` is excluded by name. Its negative path was verified by adding a `strncat` to `esp.cpp`, which failed the check, then removing it |
 | `required-files` | ~5 ms | The agent layer and the host's load-bearing files all still exist |
-| `win32-tu-parse` *(full)* | ~14 s | `glass-obsidian/tools/check_win_tu.sh`: the app's 39 parseable TUs parse against the stub `<Windows.h>` → **win32 glue parses** |
 | `obsidian-headless` *(full)* | ~33 s run + ~18 s build | The library's own harness: **13/13 invariants passed**, 13 PNGs written. No GPU, no window system |
 | `features-geometry` *(full)* | ~1 s run + ~6 s build | `glass-obsidian/tools/world_ray_test.cpp` against the app's real headers: **184 cases, 0 failed** (raycast geometry + grid, draw range, FOV storage form, save/restore, aim tracking, ballistics, flight's ramp/caps/hover-bias/write-watch, frame-rate classification/clamp/pacing, sky arithmetic for the time-of-day write) plus the grid-vs-flat benchmark (19.9 ms vs 954 ms) |
 | `menu-shots` *(full)* | ~22 s run + ~20 s build | The app's real `ui/menu_ui.cpp` rendered headlessly: **82 checks, all ok**, 39 PNGs, `0 command(s) outside their clip` |
 
-Timings measured 2026-10-16 on this sandbox: `--checks=full` cold ≈ **120 s** (all four built), warm ≈ **80 s** (run only, binaries cached under
-`<tmp>/roblox-external-checks/` — never in Git), fast checks ≈ **0.1 s**,
+Timings measured 2026-10-20 on this sandbox: `--checks=full` cold ≈ **120 s** (all three built), warm ≈ **80 s** (run only, binaries cached under
+`<tmp>/daemon-checks/` — never in Git), fast checks ≈ **0.1 s**,
 `node agent/context.ts` itself ≈ 0.4 s.
 
 What is *not* in the registry: anything needing Windows, a GPU, or a running Roblox

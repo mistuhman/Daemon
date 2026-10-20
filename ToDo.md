@@ -17,10 +17,13 @@
       Windows-offset fallback. See docs/LINUX_ATTACH_DIAGNOSTIC.md for handoff.
 - [x] Integrate the Repo-Template agent layer (doctrine, context, plans, memory, one
       passthrough, capability verification) into this repo — see `docs/DOCTRINE.md`
-- [x] Rename `roblox_external/process.h` / `process.cpp` → `roblox_process.*` so the
-      project header stops shadowing the CRT's `<process.h>` (6 TUs + the vcxproj and its
-      filters). Until then `std::thread` / `std::async` / `<future>` do not compile in
-      this project and `check_win_tu.sh` refuses them by grep — ARCHITECTURE §9
+- [x] **Complete Windows removal and rename to Daemon (Linux-only)**
+      - Removed all Windows code (main.cpp, overlay.cpp, menu.cpp, memory.cpp, nt_syscalls, roblox_process, platform_win, offsets_live, etc.)
+      - Renamed project from `roblox_external` to `daemon`
+      - Updated CMakeLists.txt for Linux-only build
+      - Updated README.md, globals.h, overlay_linux.cpp, main_linux.cpp branding
+      - Created Linux-only config.cpp (XDG_CONFIG_HOME)
+      - Removed WinHTTP servers_http.cpp, using platform/servers_http_linux.cpp instead
 - [ ] Settle the ❓ rows in `README.md`'s feature table — tracers, hitbox expander, dead
       check, wall check, skybox validity bytes, config round-trip. Each one needs a live
       server, a measurement, and a doc line; that table is the repo's honest task list
@@ -88,7 +91,7 @@
       break; proven against the 012 file). The app now opens as a bootstrapper
       (dx9ware shape, `docs/BOOTSTRAPPER.md`): watches for Sober, readiness-gates
       Load (libroblox maps, yama ptrace_scope, display, overlay binary — each
-      failure names its fix), Load spawns `external --locked` and the manager owns
+      failure names its fix), Load spawns `daemon --locked` and the manager owns
       the lifecycle. The overlay is locked to Sober (hidden without its window,
       geometry follows the EWMH rect) and streamproofed (hidden while obs/vlc/
       ffmpeg/wf-recorder/… runs; `streamproof_apps` extras via globals — config
@@ -106,16 +109,16 @@ Logged automatically by `node agent/context.ts` — the 12 most recent entries a
 mirrored here from `agent/memory/session.jsonl` (which keeps everything).
 
 <!-- session-log:start -->
-- 2026-10-19T22:58:11.491Z · arena/41a1b6f9-roblox-external@40f14a1 · context pass (dirty:2)
-- 2026-10-19T22:58:54.042Z · arena/41a1b6f9-roblox-external@40f14a1 · User confirms022 full Void graphics build and installed bootstrapper Load attaches to live Sober (new PID/base, verified handle). Features deliberately disabled; SDL visual not32bitARGB and ordinary shell window unacceptable. User requests create+merge PR now, next chat real Linux feature discovery and proper overlay; investigate Dotline crosshair app actual source for cross-DE priority, cite evidence and distinguish X11/Wayland. Handoff recorded; no Dotline implementation claims or extra patches in closing turn. (dirty:3)
-- 2026-10-19T23:01:34.220Z · arena/ba61af3a-roblox-external@3de5400 · context pass (dirty:0)
-- 2026-10-19T23:01:47.407Z · arena/ba61af3a-roblox-external@3de5400 · context pass (dirty:2)
-- 2026-10-19T23:02:02.481Z · arena/ba61af3a-roblox-external@3de5400 · probe run (dirty:2)
-- 2026-10-19T23:02:22.107Z · arena/ba61af3a-roblox-external@3de5400 · context pass + checks (dirty:2)
 - 2026-10-19T23:02:38.020Z · arena/ba61af3a-roblox-external@3de5400 · Cold-start familiarization: read README.md Agent Operating Protocol, ran full brief, read DOCTRINE/CONTEXT/CAPABILITIES; probes 9/9 (cmake absent by design, windows-toolchain absent by design); invariants 5/5; vision probe PNG transcribed exactly (AGENT VISION PROBE / K7-Q3-91 / RGB order). Ready for next user prompt. (dirty:2)
 - 2026-10-19T23:05:27.257Z · arena/ba61af3a-roblox-external@3de5400 · Session start: continue from latest PR — real Roblox object discovery on Sober (no guesswork, established methods) + main GUI as a real overlay on Sober. (dirty:2)
 - 2026-10-20T00:12:57.320Z · arena/ba61af3a-roblox-external@3de5400 · context pass (dirty:30)
 - 2026-10-20T00:51:06.174Z · arena/ba61af3a-roblox-external@3de5400 · context pass + checks (dirty:36)
 - 2026-10-20T00:52:17.930Z · arena/ba61af3a-roblox-external@3de5400 · context pass + full checks (dirty:36)
 - 2026-10-20T00:52:44.080Z · arena/ba61af3a-roblox-external@3de5400 · GUI+overlay stretch landed. (1) menu_ui.cpp rewritten to the user's dx9ware spec: one main column window (name at top, dim status, 22 feature rows with +/- dropdown markers, menu key + exit), each row opens a settings window in a column; strictly two colours (white accent + semi-opaque black plate) via one PushBareStyle (51 colours/6 vars) over obs::ApplyTheme; settings windows now land in a 3-wide grid cascade beside the column (side-by-side, none buried — fixes the overlap seen in w01-three-windows); checkboxes get a 1-frame white border (unchecked was invisible), colours are NoInputs swatches (120px RGBA floats clipped). menu_shots harness extended to 83 (FeatureCount/FeatureRect bleed API + w01-three-windows) = 83 PASS / 0 FAIL. (2) Overlay plan applied: x11overlay::ArgbVisualId() + SDL_VIDEO_X11_WINDOW_VISUALID hint before SDL_CreateWindow (the SDL-supported way to force the 32-bit visual; alpha-8 GLX alone still gave depth-24 in the field); SDL_VIDEODRIVER=x11 pinned when DISPLAY exists (XWayland ok) else headless; DowngradeToWindowed DELETED — overlay-or-headless via FailHeadless; EnsureAboveGame() re-asserts ABOVE+XRaise only when _NET_CLIENT_LIST_STACKING says we are under the game, called every follow tick (500->250ms); _NET_WM_STATE_STICKY added to dock hints; MSAA 4x dropped (vsync kept). (3) Verification: all app TUs -Wall clean; overlay_linux also compiled -DHAS_SDL_OVERLAY=1 against fetched SDL2+Khronos headers; platform_linux also compiled -DHAS_X11=1 -DHAS_XFIXES=1 against cloned libX11/xorgproto/libXfixes headers; node agent/context.ts --checks 5/5 and --checks=full 4/4 (win32 parse, obsidian 13/13, features-geometry 155/0, menu-shots all ok). Evidence crops: _menu_col.png, _menu_dropdowns.png (untracked). PENDING: fixture test for RTTI discovery; live operator check of ARGB visual + stacking on Sober. (dirty:36)
+- 2026-10-20T01:58:28.326Z · arena/d0f99e6b-daemon@22ec1f6 · context pass + checks (dirty:164)
+- 2026-10-20T02:00:23.507Z · arena/d0f99e6b-daemon@22ec1f6 · context pass + checks (dirty:165)
+- 2026-10-20T03:19:41.477Z · arena/d0f99e6b-daemon@8896f4d · context pass + checks (dirty:183)
+- 2026-10-20T03:21:12.641Z · arena/d0f99e6b-daemon@8896f4d · context pass + checks (dirty:183)
+- 2026-10-20T03:21:33.936Z · arena/d0f99e6b-daemon@8896f4d · context pass + checks (dirty:183)
+- 2026-10-20T03:22:32.709Z · arena/d0f99e6b-daemon@8896f4d · context pass + checks (dirty:183)
 <!-- session-log:end -->

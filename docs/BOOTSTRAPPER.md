@@ -1,4 +1,4 @@
-# The bootstrapper (roblox-external-boot)
+# The bootstrapper (daemon-boot)
 
 **Operator directive, 2026-10-19 (dx9ware shape):** the app opens as a
 bootstrapper that watches for Sober, gates a **Load** button on readiness, and
@@ -10,9 +10,9 @@ growth. This page is the contract and the growth plan.
 ## What ships (payload 013)
 
 ```
-roblox-external-boot            the manager (this doc)
-  watch Sober ─► ready ─► Load ─► spawn 'external --locked' ─► own its lifecycle
-external                        the overlay (unchanged core, new --locked mode)
+daemon-boot            the manager (this doc)
+  watch Sober ─► ready ─► Load ─► spawn 'daemon --locked' ─► own its lifecycle
+daemon                  the overlay (unchanged core, new --locked mode)
 ```
 
 The window: status line + detail line, spinner while watching, Load (gated),
@@ -26,10 +26,10 @@ UI-free core so the future manager tabs have a spine to hang on.
 | manager core | `boot/bootstrap_core.{h,cpp}` | readiness scan, overlay supervision (fork/execv + SIGTERM + waitpid). No UI. |
 | GTK3 shim | `boot/gtk3_loader.{h,cpp}` | resolves the 29 `libgtk-3`/`glib` symbols we use via `dlopen` — no GTK headers, no link dependency. Absent GTK ⇒ `--console` still works, one-line error otherwise. |
 | window | `boot/main_boot.cpp` | the screen; `--console`, `--check`, `--auto-load`, `--exit-after N`, `--force-load` (smoke). |
-| overlay contract | `roblox_external/platform/main_linux.cpp` | `--locked` flag → `globals::g_locked_to_sober` |
-| visibility | `roblox_external/platform/overlay_linux.cpp` | `ApplyVisibility()` — the only place that hides/shows the window |
-| streamproof | `roblox_external/platform/streamproof_watcher.{h,cpp}` | /proc capturer scan (2 s throttle): obs, vlc, ffmpeg, wf-recorder, … + `globals::streamproof_apps` extras |
-| switches | `roblox_external/globals.h` | `g_locked_to_sober`, `streamproof_enabled`, `streamproof_apps[256]` |
+| overlay contract | `daemon/platform/main_linux.cpp` | `--locked` flag → `globals::g_locked_to_sober` |
+| visibility | `daemon/platform/overlay_linux.cpp` | `ApplyVisibility()` — the only place that hides/shows the window |
+| streamproof | `daemon/platform/streamproof_watcher.{h,cpp}` | /proc capturer scan (2 s throttle): obs, vlc, ffmpeg, wf-recorder, … + `globals::streamproof_apps` extras |
+| switches | `daemon/globals.h` | `g_locked_to_sober`, `streamproof_enabled`, `streamproof_apps[256]` |
 
 ### Why dlopen GTK
 
@@ -65,12 +65,12 @@ Hidden means unmapped: no draw, events pumped at 20 Hz, hotkeys live.
 | DISPLAY/WAYLAND_DISPLAY | overlay cannot open a window | run inside a graphical session |
 | overlay binary beside us | Load would exec nothing | run setup.sh |
 
-`roblox-external-boot --check` prints the same scan as one line — setup.sh runs
+`daemon-boot --check` prints the same scan as one line — setup.sh runs
 it as the **doctor**.
 
 ### Lifecycle ownership
 
-The bootstrapper owns the overlay process: Load forks `external --locked` in
+The bootstrapper owns the overlay process: Load forks `daemon --locked` in
 its own session; Unload or exit sends SIGTERM (the overlay's detach path
 restores client writes — we never SIGKILL by default); a dying overlay is
 reaped via `waitpid(WNOHANG)`. Closing the bootstrap window stops the overlay.

@@ -4,12 +4,12 @@ A **collapse-safe window class** and a **layered glass/obsidian theme** for
 [Dear ImGui](https://github.com/ocornut/imgui) 1.91, written against the *public*
 ImGui API. It exists to answer two problems at once:
 
-1. **"My menu resizes wrong when it's collapsed."** Level-triggered size forcing
+1. **\"My menu resizes wrong when it's collapsed.\"** Level-triggered size forcing
    (`SetNextWindowSize(..., Cond_Always)`), constraint rects that lag one frame
    behind the state they depend on, and min-widths that differ between collapsed
    and expanded states are the usual suspects. `obsidian::ObsidianWindow` removes
    all three by construction (see *The resize fix* below).
-2. **"My ImGui UI looks like default ImGui."** `obsidian::ApplyTheme` plus the
+2. **\"My ImGui UI looks like default ImGui.\"** `obsidian::ApplyTheme` plus the
    widget set in `glass.h` give you translucent layered surfaces, specular top
    edges, gradient accents and animated controls drawn as vector paths — no
    textures, no shaders, no icon font.
@@ -40,8 +40,8 @@ If the host application's menu is checked out next to the library, the same
 rasteriser also renders *that* menu, page by page, against stub callbacks:
 
 ```sh
-g++ -std=c++17 -O1 -Iinclude -Ithird_party/imgui -I"../roblox_external" \
-    tools/menu_shots.cpp "../roblox_external/ui/menu_ui.cpp" src/*.cpp \
+g++ -std=c++17 -O1 -Iinclude -Ithird_party/imgui -I"../daemon" \
+    tools/menu_shots.cpp "../daemon/ui/menu_ui.cpp" src/*.cpp \
     third_party/imgui/imgui*.cpp -o build/menu_shots
 
 ./build/menu_shots out/menu       # 8 PNGs + "no surface outside its clip" check

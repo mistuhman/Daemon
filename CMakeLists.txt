@@ -1,9 +1,8 @@
-# CMakeLists.txt — Linux port (P0→P2 plug-and-play + dynamic fetcher)
-# Windows continues to use roblox_external/roblox_external.vcxproj.
-# This file is Linux-only and not part of the vcxproj.
+# CMakeLists.txt — Daemon (Linux-only external for Sober)
+# No Windows support — this is a clean Linux-only build.
 
 cmake_minimum_required(VERSION 3.16)
-project(roblox-external VERSION 0.1.0 LANGUAGES CXX)
+project(daemon VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,7 +13,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # ---- ImGui core (vendored) -------------------------------------------------
-set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/roblox_external/imgui")
+set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/daemon/imgui")
 set(IMGUI_SOURCES
   "${IMGUI_DIR}/imgui.cpp"
   "${IMGUI_DIR}/imgui_draw.cpp"
@@ -38,61 +37,59 @@ set(GLASS_SOURCES
 
 # ---- Linux platform + scanner (plug-and-play + dynamic offset fetcher) ---
 set(PLATFORM_SOURCES
-  roblox_external/platform/platform_linux.cpp
-  roblox_external/platform/sober_scanner.cpp
-  roblox_external/platform/port_watcher.cpp
-  roblox_external/offsets_dynamic.cpp
-  roblox_external/platform/overlay_linux.cpp
-  roblox_external/platform/main_linux.cpp
-  roblox_external/platform/config_linux.cpp
-  roblox_external/platform/servers_http_linux.cpp
-  roblox_external/platform/media_tracker_linux.cpp
-  roblox_external/platform/streamproof_watcher.cpp
+  daemon/platform/platform_linux.cpp
+  daemon/platform/sober_scanner.cpp
+  daemon/platform/port_watcher.cpp
+  daemon/offsets_dynamic.cpp
+  daemon/platform/overlay_linux.cpp
+  daemon/platform/main_linux.cpp
+  daemon/platform/servers_http_linux.cpp
+  daemon/platform/media_tracker_linux.cpp
+  daemon/platform/streamproof_watcher.cpp
 )
 
-# ---- Core app (platform-free, same code as Windows) ----------------------
+# ---- Core app (platform-free features) ------------------------------------
 set(CORE_SOURCES
-  roblox_external/cache.cpp
-  roblox_external/game.cpp
-  roblox_external/memory.cpp
-  roblox_external/roblox_process.cpp
-  roblox_external/features/movement/mover.cpp
-  roblox_external/features/aimbot/aimbot.cpp
-  roblox_external/features/antiafk/antiafk.cpp
-  roblox_external/features/camera/camera_drive.cpp
-  roblox_external/features/click_teleport/click_teleport.cpp
-  roblox_external/features/esp/esp.cpp
-  roblox_external/features/explorer/explorer.cpp
-  roblox_external/features/flight/flight.cpp
-  roblox_external/features/fling/fling.cpp
-  roblox_external/features/fov_changer/fov_changer.cpp
-  roblox_external/features/fpscap/fps_cap.cpp
-  roblox_external/features/freecam/freecam.cpp
-  roblox_external/features/gravity/gravity.cpp
-  roblox_external/features/hipheight/hipheight.cpp
-  roblox_external/features/hitbox_expander/hitbox_expander.cpp
-  roblox_external/features/hitsound/hitsound.cpp
-  roblox_external/features/infinite_jump/infinite_jump.cpp
-  roblox_external/features/inventory_checker/inventory_checker.cpp
-  roblox_external/features/jumppower/jumppower.cpp
-  roblox_external/features/noclip/noclip.cpp
-  roblox_external/features/nofall/nofall.cpp
-  roblox_external/features/players/friends.cpp
-  roblox_external/features/players/players.cpp
-  roblox_external/features/raycast/world_ray.cpp
-  roblox_external/features/servers/servers.cpp
-  roblox_external/features/skybox_changer/skybox_changer.cpp
-  roblox_external/features/triggerbot/triggerbot.cpp
-  roblox_external/features/walkspeed/walkspeed.cpp
-  roblox_external/features/waypoints/waypoints.cpp
-  roblox_external/features/world/env.cpp
-  roblox_external/features/world/world_esp.cpp
-  roblox_external/offsets_live.cpp
-  roblox_external/ui/menu_ui.cpp
-  roblox_external/menu_linux.cpp
+  daemon/cache.cpp
+  daemon/game.cpp
+  daemon/media_tracker.cpp
+  daemon/offsets_live.cpp
+  daemon/features/movement/mover.cpp
+  daemon/features/aimbot/aimbot.cpp
+  daemon/features/antiafk/antiafk.cpp
+  daemon/features/camera/camera_drive.cpp
+  daemon/features/click_teleport/click_teleport.cpp
+  daemon/features/esp/esp.cpp
+  daemon/features/explorer/explorer.cpp
+  daemon/features/flight/flight.cpp
+  daemon/features/fling/fling.cpp
+  daemon/features/fov_changer/fov_changer.cpp
+  daemon/features/fpscap/fps_cap.cpp
+  daemon/features/freecam/freecam.cpp
+  daemon/features/gravity/gravity.cpp
+  daemon/features/hipheight/hipheight.cpp
+  daemon/features/hitbox_expander/hitbox_expander.cpp
+  daemon/features/hitsound/hitsound.cpp
+  daemon/features/infinite_jump/infinite_jump.cpp
+  daemon/features/inventory_checker/inventory_checker.cpp
+  daemon/features/jumppower/jumppower.cpp
+  daemon/features/noclip/noclip.cpp
+  daemon/features/nofall/nofall.cpp
+  daemon/features/players/friends.cpp
+  daemon/features/players/players.cpp
+  daemon/features/raycast/world_ray.cpp
+  daemon/features/servers/servers.cpp
+  daemon/features/skybox_changer/skybox_changer.cpp
+  daemon/features/triggerbot/triggerbot.cpp
+  daemon/features/walkspeed/walkspeed.cpp
+  daemon/features/waypoints/waypoints.cpp
+  daemon/features/world/env.cpp
+  daemon/features/world/world_esp.cpp
+  daemon/ui/menu_ui.cpp
+  daemon/menu_linux.cpp
 )
 
-# ---- SDL2/GL detection (must run before we decide on backends) -----------
+# ---- SDL2/GL detection (must run before we decide on backends) ------------
 find_package(SDL2 QUIET)
 find_package(OpenGL QUIET)
 find_package(PkgConfig QUIET)
@@ -136,7 +133,7 @@ if(NOT OPENGL_FOUND)
   endif()
 endif()
 
-# ---- X11 / XFixes (P3 overlay control: game rect, click-through, hotkeys) --
+# ---- X11 / XFixes (overlay control: game rect, click-through, hotkeys) ----
 # Not fatal when missing: x11overlay stubs compile everywhere and the windowed
 # menu keeps working — only the transparent click-through overlay needs them.
 find_package(X11 QUIET)
@@ -155,7 +152,7 @@ else()
   message(STATUS "X11 not found — overlay control stubs only (windowed menu)")
 endif()
 
-add_executable(external
+add_executable(daemon
   ${IMGUI_SOURCES}
   ${GLASS_SOURCES}
   ${PLATFORM_SOURCES}
@@ -163,47 +160,46 @@ add_executable(external
 )
 
 if(SDL2_FOUND AND OPENGL_FOUND)
-  target_sources(external PRIVATE ${IMGUI_BACKEND_SOURCES})
+  target_sources(daemon PRIVATE ${IMGUI_BACKEND_SOURCES})
   message(STATUS "SDL2+GL found — backends will be compiled")
 endif()
 
-target_include_directories(external PRIVATE
-  roblox_external
-  roblox_external/features
+target_include_directories(daemon PRIVATE
+  daemon
+  daemon/features
   "${GLASS_DIR}/include"
   "${IMGUI_DIR}"
   "${IMGUI_DIR}/.."
 )
 
-target_compile_options(external PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
-target_compile_definitions(external PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+target_compile_options(daemon PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+target_compile_definitions(daemon PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 
 if(HAVE_X11)
-  target_compile_definitions(external PRIVATE HAS_X11=1)
-  target_include_directories(external PRIVATE ${X11_INCLUDE_DIR})
-  target_link_libraries(external PRIVATE ${X11_X11_LIB})
+  target_compile_definitions(daemon PRIVATE HAS_X11=1)
+  target_include_directories(daemon PRIVATE ${X11_INCLUDE_DIR})
+  target_link_libraries(daemon PRIVATE ${X11_X11_LIB})
   if(HAVE_XFIXES)
-    target_compile_definitions(external PRIVATE HAS_XFIXES=1)
-    target_link_libraries(external PRIVATE ${X11_Xfixes_LIB})
+    target_compile_definitions(daemon PRIVATE HAS_XFIXES=1)
+    target_link_libraries(daemon PRIVATE ${X11_Xfixes_LIB})
   endif()
 endif()
 
 find_package(Threads REQUIRED)
-target_link_libraries(external PRIVATE Threads::Threads)
+target_link_libraries(daemon PRIVATE Threads::Threads)
 
-# (SDL2/GL detection already done above before add_executable)
 if(SDL2_FOUND AND OPENGL_FOUND)
   if(TARGET SDL2::SDL2)
-    target_link_libraries(external PRIVATE SDL2::SDL2)
+    target_link_libraries(daemon PRIVATE SDL2::SDL2)
   else()
-    target_link_libraries(external PRIVATE ${SDL2_LIBRARIES})
+    target_link_libraries(daemon PRIVATE ${SDL2_LIBRARIES})
   endif()
   if(OPENGL_FOUND AND TARGET OpenGL::GL)
-    target_link_libraries(external PRIVATE OpenGL::GL)
+    target_link_libraries(daemon PRIVATE OpenGL::GL)
   elseif(OPENGL_FOUND)
-    target_link_libraries(external PRIVATE GL)
+    target_link_libraries(daemon PRIVATE GL)
   endif()
-  target_compile_definitions(external PRIVATE HAS_SDL_OVERLAY=1)
+  target_compile_definitions(daemon PRIVATE HAS_SDL_OVERLAY=1)
   message(STATUS "SDL2+GL found — overlay will be windowed")
 else()
   message(STATUS "SDL2/GL not found — building headless (plug-and-play + scanner proven, overlay is log-only)")
@@ -217,47 +213,47 @@ endif()
 
 option(MUSL_STATIC "Link libstdc++/libgcc statically for musl Void" OFF)
 if(MUSL_STATIC)
-  target_link_options(external PRIVATE -static-libstdc++ -static-libgcc)
+  target_link_options(daemon PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
-# ---- self-test helper (P1) ------------------------------------------------
+# ---- self-test helper -----------------------------------------------------
 add_executable(sober_probe EXCLUDE_FROM_ALL
   tools/sober_probe.cpp
-  roblox_external/platform/platform_linux.cpp
-  roblox_external/platform/sober_scanner.cpp
-  roblox_external/platform/port_watcher.cpp
+  daemon/platform/platform_linux.cpp
+  daemon/platform/sober_scanner.cpp
+  daemon/platform/port_watcher.cpp
 )
-target_include_directories(sober_probe PRIVATE roblox_external)
+target_include_directories(sober_probe PRIVATE daemon)
 target_link_libraries(sober_probe PRIVATE Threads::Threads)
 
-# ---- probe with port_watcher ---------------------------------------------
+# ---- probe with port_watcher ----------------------------------------------
 add_executable(port_probe EXCLUDE_FROM_ALL
   tools/sober_probe.cpp
-  roblox_external/platform/platform_linux.cpp
-  roblox_external/platform/sober_scanner.cpp
-  roblox_external/platform/port_watcher.cpp
+  daemon/platform/platform_linux.cpp
+  daemon/platform/sober_scanner.cpp
+  daemon/platform/port_watcher.cpp
 )
-target_include_directories(port_probe PRIVATE roblox_external)
+target_include_directories(port_probe PRIVATE daemon)
 target_link_libraries(port_probe PRIVATE Threads::Threads)
 
-# ---- bootstrapper (dx9ware shape: watch Sober -> Load -> managed overlay) --
+# ---- bootstrapper (dx9ware shape: watch Sober -> Load -> managed overlay) ---
 # The manager core (boot/bootstrap_core.cpp) is UI-free; the window talks to
 # GTK3 through boot/gtk3_loader.cpp (dlopen — no GTK headers, no link
-# dependency) and --console runs with no GTK at all. Load spawns 'external
+# dependency) and --console runs with no GTK at all. Load spawns 'daemon
 # --locked'; the bootstrapper owns the overlay lifecycle from there.
 # Roadmap lives in docs/BOOTSTRAPPER.md.
-add_executable(roblox-external-boot
+add_executable(daemon-boot
   boot/bootstrap_core.cpp
   boot/gtk3_loader.cpp
   boot/main_boot.cpp
-  roblox_external/platform/platform_linux.cpp
-  roblox_external/platform/sober_scanner.cpp
-  roblox_external/platform/port_watcher.cpp
+  daemon/platform/platform_linux.cpp
+  daemon/platform/sober_scanner.cpp
+  daemon/platform/port_watcher.cpp
 )
-target_include_directories(roblox-external-boot PRIVATE roblox_external .)
-target_link_libraries(roblox-external-boot PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+target_include_directories(daemon-boot PRIVATE daemon .)
+target_link_libraries(daemon-boot PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
 if(MUSL_STATIC)
-  target_link_options(roblox-external-boot PRIVATE -static-libstdc++ -static-libgcc)
+  target_link_options(daemon-boot PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
-install(TARGETS external roblox-external-boot DESTINATION bin)
+install(TARGETS daemon daemon-boot DESTINATION bin)

@@ -1,6 +1,6 @@
 // tools/sober_probe.cpp — P1 bring-up probe (LINUX_PORT_PLAN §8.3 step 2)
 // Usage (one line each; no trailing backslashes so the comments stay separate):
-//   g++ -std=c++17 -I roblox_external roblox_external/platform/platform_linux.cpp roblox_external/platform/sober_scanner.cpp tools/sober_probe.cpp -o /tmp/probe && /tmp/probe
+//   g++ -std=c++17 -I daemon daemon/platform/platform_linux.cpp daemon/platform/sober_scanner.cpp tools/sober_probe.cpp -o /tmp/probe && /tmp/probe
 //   or via cmake: cmake --build build-void --target sober_probe && ./build-void/sober_probe
 //
 // Prints sober pid, libroblox.so base, and ScanResult::diag — the P1 receipt

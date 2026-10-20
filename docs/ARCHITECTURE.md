@@ -1,6 +1,6 @@
 # Architecture & Technical Notes
 
-Detailed technical documentation for roblox-external.
+Detailed technical documentation for daemon.
 See [README.md](../README.md) for build instructions and feature overview.
 
 ---
@@ -463,7 +463,7 @@ ESP fallback), and - the half that matters most with sticky aim - a lock is
 released the moment its target dies, because a corpse keeps its head part
 readable and would otherwise be aimed at until it despawns. `tools/dead_check_test.cpp`
 pins the predicate (14 checks, no Windows, no game): `g++ -std=c++17 -O1
--I"../roblox_external" tools/dead_check_test.cpp -o build/dead_check_test`.
+-I"../daemon" tools/dead_check_test.cpp -o build/dead_check_test`.
 
 ### 4.7 A font re-bake has to re-create the renderer's font texture (found by the screenshots)
 
@@ -615,7 +615,7 @@ parts, skeletons, the root part — while class-name lookups keep working. That 
 caused a long stretch of "nothing works but walkspeed". Fixed in `8906f70`.
 
 `docs/offsets_dump.txt` is the historical flat dump from the `f5a60436` era, kept
-for the diff trail. The current full dump ships as `roblox_external/offsets_fallback.json`
+for the diff trail. The current full dump ships as `daemon/offsets_fallback.json`
 (imtheo JSON format - 70 classes / 399
 fields for `version-4310300497aa4917`, regenerated from `offsets.h` by the same tool that
 merges a dump into it). Both parsers — the JSON one and the
@@ -657,7 +657,7 @@ declared, and the same version string as the shipped fallback.
   not evidence of anything.
 - **click-tp geometry** — `features/click_teleport/tp_math.h` is the ray/plane/box
   math with no Win32 and no RPM in it, so it has a host test:
-  `g++ -std=c++17 -I"../roblox_external" tools/tp_math_test.cpp` then
+  `g++ -std=c++17 -I"../daemon" tools/tp_math_test.cpp` then
   `./build/tp_math_test` (16 checks). The important one round-trips the cursor ray
   against `esp.cpp`'s own `WorldToScreen` — copied into the test — for ~1500
   pixel/point combinations, which pins "the pixel you clicked" to "the pixel ESP drew
@@ -673,7 +673,7 @@ declared, and the same version string as the shipped fallback.
   so the fixed dt and the `worldUp x fwd` look-at cannot come back unnoticed.
 - **the server-hop reply readers** — `features/servers/servers_json.h` parses both
   Roblox replies with no Win32 and no memory reads, so it has a host test like the
-  click-tp math: `g++ -std=c++17 -I"../roblox_external" tools/servers_json_test.cpp`
+  click-tp math: `g++ -std=c++17 -I"../daemon" tools/servers_json_test.cpp`
   then `./build/servers_json_test` (33 checks). It pins the parts that a real client
   cannot tell you apart: that a nested `players[]` array does not split an entry in
   half, that an entry with no `playing` is dropped rather than shown as `0/40`
@@ -733,7 +733,7 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 - ~~`.vcxproj.filters`~~ → regenerated (imgui + per-feature folders).
 - ~~Clipper2 vendor tree~~ → removed entirely (see §7). The only user
   (`DrawMergedPoly` in esp.cpp) was dead code left over from the mesh backend.
-- **`roblox_external/process.h` shadows the CRT's `<process.h>`**, because
+- **`daemon/process.h` shadows the CRT's `<process.h>`**, because
   `AdditionalIncludeDirectories` starts with `$(ProjectDir)`. Anything in the standard
   library that does `#include <process.h>` gets *this* file instead: MSVC's `<thread>`
   does, needs `_beginthreadex`, and reports `C2039` + `C3861` at
@@ -819,7 +819,7 @@ The files that own it are the ones that *are* the Windows layer:
   COM), `config.cpp` (`FindFirstFileA` enumeration), `servers_http.cpp`
   (WinHTTP + curl transports), `nt_syscalls.*`, `platform/platform_win.cpp`.
 
-Everything else under `roblox_external/` — all 19 feature TUs, `memory`,
+Everything else under `daemon/` — all 19 feature TUs, `memory`,
 `process`, `game`, `cache`, `offsets_live` — is Windows.h-free, and the
 26-TU `check_win_tu.sh` pass keeps it that way (the list covers every TU
 in the app except `main.cpp`, `overlay.cpp` and `media_tracker.cpp`, which
@@ -882,7 +882,7 @@ read pacing, same 500µs echo cap.
 This repo carries the operating layer from
 [Glockerz/Repo-Template](https://github.com/Glockerz/Repo-Template) — doctrine, context,
 plans, memory, and a capability-verified single-command context loader — integrated as a
-**seam**, not as a second system. Nothing under `roblox_external/` is part of it; the
+**seam**, not as a second system. Nothing under `daemon/` is part of it; the
 window is not a preview host and `node` is not a build dependency of the exe.
 
 ### The surface
@@ -918,7 +918,7 @@ suite as `features-geometry` (184 cases: wall-check geometry, draw range, FOV st
 save/restore, aim tracking, ballistics, flight's stealth rules, the frame-rate arithmetic,
 the sky's arithmetic — §12 to §18) and `menu_shots` against the app's real
 `ui/menu_ui.cpp` (82 checks, 39 PNGs, 0 commands outside their clip). Cold ≈120 s, warm
-≈80 s on this sandbox; binaries cache under `<tmp>/roblox-external-checks/`, never in the
+≈80 s on this sandbox; binaries cache under `<tmp>/daemon-checks/`, never in the
 tree (§9's artifact rule, and the reason `glass-obsidian/out` is documented as the
 deliberate exception). §12–§15 date the sections that grew it; §11's "three that need a
 compiler" was the first version of this paragraph.
@@ -1169,8 +1169,8 @@ and nothing else changed:
 
   ```
   g++ -std=c++17 -fsyntax-only -Wall -Wextra -Wformat=2 \
-      -Iglass-obsidian/tools/win32_stub -Iroblox_external -Iroblox_external/features \
-      -Iroblox_external/imgui -Iglass-obsidian/include roblox_external/features/nofall/nofall.cpp
+      -Iglass-obsidian/tools/win32_stub -Idaemon -Idaemon/features \
+      -Idaemon/imgui -Iglass-obsidian/include daemon/features/nofall/nofall.cpp
   ```
 
   and remove the attribute again before committing (it is a GCC extension; MSVC would

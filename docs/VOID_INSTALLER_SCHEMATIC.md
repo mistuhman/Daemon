@@ -4,7 +4,7 @@
 
 ## Goal
 
-One command after `xbps-fetch` gives a working `roblox-external`:
+One command after `xbps-fetch` gives a working `daemon`:
 
 ```sh
 xbps-fetch -o /tmp/re https://paste.c-net.org/<id>
@@ -12,7 +12,7 @@ sh /tmp/re /tmp/extract
 sh /tmp/extract/setup.sh        # already proven: BUILD_DONE=YES on Void-66 (g++14.2, SDL2 2.30, Mesa)
 ```
 
-`setup.sh` must also leave a permanent entry: `~/.local/bin/roblox-external` + `~/.local/share/applications/roblox-external.desktop` so XFCE/Whisker and Ulauncher find it by `roblox` — already proven via `assets/install.sh`.
+`setup.sh` must also leave a permanent entry: `~/.local/bin/daemon` + `~/.local/share/applications/daemon.desktop` so XFCE/Whisker and Ulauncher find it by `roblox` — already proven via `assets/install.sh`.
 
 The schematic below makes that install reproducible across both Void variants.
 
@@ -21,14 +21,14 @@ The schematic below makes that install reproducible across both Void variants.
 ```
 /tmp/re                     courier payload (sha-gated, 2421KB, 160 files)
 /tmp/re-extract/            unpacked tree (payload + setup.sh + assets/ + build/)
-~/.local/bin/roblox-external -> /tmp/re-extract/build/external  *or* copied ELF
-~/.local/share/applications/roblox-external.desktop  (StartupWMClass=roblox-external)
+~/.local/bin/daemon -> /tmp/re-extract/build/external  *or* copied ELF
+~/.local/share/applications/daemon.desktop  (StartupWMClass=daemon)
 /tmp/re-extract/build.log    full build log (not tail -n 20)
-~/.cache/roblox-external/offsets.json  cached version-gated offsets
+~/.cache/daemon/offsets.json  cached version-gated offsets
 ./config/                   per-launch ESP/aim etc (ExeDir+config/)
 ```
 
-Copy vs symlink choice: `install.sh` currently **copies** the ELF to `~/.local/bin/roblox-external` so `/tmp` can be cleaned. Keep copy.
+Copy vs symlink choice: `install.sh` currently **copies** the ELF to `~/.local/bin/daemon` so `/tmp` can be cleaned. Keep copy.
 
 ## Dependencies matrix
 
@@ -50,7 +50,7 @@ Copy vs symlink choice: `install.sh` currently **copies** the ELF to `~/.local/b
 
 ## X11 specifics (P3 next)
 
-1. **WM_CLASS**: `SDL_setenv("SDL_VIDEO_X11_WMCLASS","roblox-external",1)` before `SDL_Init` — SDL 2.30 removed `SDL_HINT_VIDEO_X11_WMCLASS`, env var is the backend read.
+1. **WM_CLASS**: `SDL_setenv("SDL_VIDEO_X11_WMCLASS","daemon",1)` before `SDL_Init` — SDL 2.30 removed `SDL_HINT_VIDEO_X11_WMCLASS`, env var is the backend read.
 2. **Always-on-top + borderless**: `SDL_WINDOW_BORDERLESS` + EWMH `_NET_WM_STATE_ABOVE` via `SDL_SetWindowAlwaysOnTop` (SDL 2.0.16+) or Xlib `XChangeProperty`.
 3. **Transparency**: request 32-bit visual (GL RGBA8), `glClearColor(0,0,0,0)`, compositor must be on (XFCE compositor enabled by default; if off, fallback to opaque window — log it).
 4. **Click-through**: XFixes input shape — when menu closed, `XFixesSetWindowShapeRegion(dpy, win, ShapeInput, 0,0, None)` (empty input shape = clicks pass to game); when menu open, `ShapeInput` = window rect. `libXfixes` is the only new dep.
@@ -67,7 +67,7 @@ Yama: `cat /proc/sys/kernel/yama/ptrace_scope` expected `1` (restricted) — sam
 ```sh
 #!/bin/sh
 set -eu
-echo "=== roblox-external Void setup (payload setup.sh) ==="
+echo "=== daemon Void setup (payload setup.sh) ==="
 echo "[setup] yama ptrace_scope=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo ?)"
 # 1. deps (best-effort)
 for pkg in base-devel cmake SDL2-devel libX11-devel libXtst-devel libXfixes-devel mesa libglvnd-devel flatpak xbps-fetch curl; do
@@ -79,9 +79,9 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tee build.log
 cmake --build build -j$(nproc) 2>&1 | tee -a build.log; test ${PIPESTATUS[0]} -eq 0
 echo "BUILD_DONE=YES" | tee -a build.log
 # 4. install entry
-sh assets/install.sh  # copies build/external -> ~/.local/bin/roblox-external + .desktop
+sh assets/install.sh  # copies build/external -> ~/.local/bin/daemon + .desktop
 # 5. run hint
-echo "Run: roblox-external  or  ~/.local/bin/roblox-external"
+echo "Run: daemon  or  ~/.local/bin/daemon"
 ```
 
 Idempotent: re-running `setup.sh` re-configures, rebuilds, reinstalls (no duplicate entries).

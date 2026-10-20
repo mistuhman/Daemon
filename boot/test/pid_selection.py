@@ -10,7 +10,7 @@ boot = os.path.abspath(sys.argv[1])
 children = []
 try:
     # These used to outrank the actual client when its cgroup was absent.
-    for argv in ('sober', 'org.vinegarhq.Sober', 'roblox-external/sober_probe'):
+    for argv in ('sober', 'org.vinegarhq.Sober', 'daemon/sober_probe'):
         children.append(subprocess.Popen([argv, '30'], executable='/bin/sleep'))
     output = subprocess.check_output([boot, '--check'], text=True)
     assert 'sober=0 pid=0 ' in output, output

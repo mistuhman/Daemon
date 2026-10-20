@@ -1,12 +1,10 @@
-# roblox external
+# Daemon
 
-A usermode external for Roblox. Reads game memory from outside the process via
-indirect NT syscalls (through a freshly mapped ntdll) and renders ESP, aimbot,
-movement features, and more in its own standalone transparent DX11 + ImGui
-overlay window.
+A Linux-only external for Roblox (Sober). Reads game memory from outside the process via
+`process_vm_readv`/`process_vm_writev` and renders ESP, aimbot, movement features, and more
+in its own standalone transparent SDL2+OpenGL + ImGui overlay window.
 
-**No injection.** The process is never touched — only read and written through
-Windows kernel APIs.
+**No injection.** The process is never touched — only read and written through Linux kernel APIs.
 
 ---
 
@@ -54,10 +52,10 @@ How each clause is implemented here:
 | Read doctrine/context, then prove image sight, tooling, thinking, context tolerance | dated probe evidence in `agent/verification/CAPABILITIES.md`, with the vision probe PNG next to it |
 
 Two things make this layer fit *this* repo rather than sit on top of it: the brief knows
-it is inside a Windows C++ external (app, library, harnesses, offsets pipeline), and the
-passthrough **runs the repo's own cheap invariants on every pass** — `<Windows.h>` staying
-in the Win32 layer, no `ReadProcessMemory`/`WriteProcessMemory` anywhere, offsets
-fallback parity — with `--checks=full` adding `check_win_tu.sh` and both g++ harnesses.
+it is inside a Linux C++ external (app, library, harnesses, offsets pipeline), and the
+passthrough **runs the repo's own cheap invariants on every pass** — no `<Windows.h>` anywhere,
+no `ReadProcessMemory`/`WriteProcessMemory` anywhere, offsets fallback parity — with
+`--checks=full` adding `check_win_tu.sh` and both g++ harnesses.
 
 ---
 
@@ -112,154 +110,74 @@ send back in **[docs/LIVE_CHECKLIST.md](docs/LIVE_CHECKLIST.md)**.
 
 ## Build
 
-1. Open `roblox_external.slnx` in Visual Studio 2022+.
-2. **VS 2022 users:** the project targets toolset `v145` (VS 2026). Downgrade to `v143`:
-   ```powershell
-   (Get-Content "roblox_external\roblox_external.vcxproj") -replace 'v145','v143' | Set-Content "roblox_external\roblox_external.vcxproj"
-   ```
-3. Set **Release | x64**, then **Build** (`Ctrl+Shift+B`).
-4. Output: `x64\Release\external.exe`
-
-> **`LNK1104: cannot open file '...\x64\Release\external.exe'` means the file is in
-> use, not that the code is broken.** The linker could not open its own output. The
-> tool is an overlay: closing the menu (or the `HOME` toggle) only hides it, and the
-> process keeps running in the tray — which is the usual holder. Exit it from the tray
-> icon's **exit** entry (that path restores the writes the tool put in the client; a
-> force-kill skips the restore), or:
-> ```powershell
-> Get-Process external -ErrorAction SilentlyContinue | Stop-Process -Force
-> ```
-> If it is not running, the file is read-only or something else has it open (an
-> Explorer preview pane, or Defender mid-scan — a retry usually works): check
-> `attrib "x64\Release\external.exe"`, clear the read-only bit with `attrib -R`,
-> delete it, rebuild.
-
 ### Requirements
-- **Desktop development with C++** workload
-- Windows 10/11 SDK
-- C++20 (`stdcpp20`)
+- **Void Linux** (or any glibc/musl Linux with SDL2, OpenGL, X11)
+- C++17 compiler (GCC 11+ or Clang 13+)
+- SDL2 development headers (`SDL2-devel` on Void)
+- Mesa/OpenGL development headers (`mesa-devel` on Void)
+- pkg-config
+- X11 development headers (`libX11-devel`, `libXfixes-devel` for click-through overlay)
+- GTK3 (for bootstrapper GUI: `gtk+3-devel` on Void)
 
-### Dependencies (vendored)
-- **ImGui 1.91.1** — `roblox_external/imgui/`
-- **Glass Obsidian** UI library — `glass-obsidian/` (compiled into the project via the `.vcxproj`)
+### Building
 
-### Linked libraries
-`d3d11` · `dxgi` · `dwmapi` · `shell32` · `winhttp` · `winmm`
+```bash
+# Install dependencies (Void Linux)
+sudo xbps-install -y SDL2-devel mesa-devel pkg-config libX11-devel libXfixes-devel gtk+3-devel
 
-> ⚠️ Release builds with **AVX2**. Needs a ~2013+ CPU. Drop to SSE2 if you hit
-> an illegal-instruction crash.
+# Configure and build
+cmake -B build
+cmake --build build
+```
+
+Output: `build/daemon` and `build/daemon-boot`
 
 ---
 
 ## Run
 
-1. Start **Roblox** (windowed or borderless — overlays can't draw over exclusive fullscreen).
-2. Run the exe **as Administrator** (required to open a handle to Roblox).
-3. The menu opens automatically. Toggle with **HOME** (rebindable).
+### Standalone (Daemon)
+```bash
+# Run as root (required for process_vm_readv/writev on other processes)
+sudo ./build/daemon
+```
 
-Roblox does **not** need to be running first — the overlay launches immediately,
-attaches in the background, and re-attaches automatically if Roblox restarts.
+The overlay launches immediately, attaches to Sober in the background, and re-attaches automatically if Sober restarts.
+- **HOME** toggles the menu (rebindable)
+- **F8** also toggles the menu
 
-**Exiting:** title-bar X, or right-click the **tray icon** → exit.
+### Via Bootstrapper (Recommended)
+```bash
+# Run the bootstrapper (does NOT need root)
+./build/daemon-boot
+```
 
-### Linux / Sober (Void)
+The bootstrapper (`daemon-boot`) watches for Sober, readiness-gates **Load** (process found, `libroblox.so` visible, `yama ptrace_scope=0`, display, overlay binary — each gap names its fix), and Load launches the overlay **locked to Sober** (hidden without the game window, geometry following it) **with streamproofing** (hides while a capture app runs). The manager owns the overlay lifecycle; `--console` works without GTK.
 
-Run **`roblox-external-boot`** — the bootstrapper (`docs/BOOTSTRAPPER.md`): it
-watches for Sober, readiness-gates **Load** (process found, `libroblox.so`
-visible, `yama ptrace_scope=0`, display, overlay binary — each gap names its
-fix), and Load launches the overlay **locked to Sober** (hidden without the
-game window, geometry following it) **with streamproofing** (hides while a
-capture app runs). The manager owns the overlay lifecycle; `--console` works
-without GTK. Setup: `sh setup.sh` (installs gtk+3 runtime, runs the doctor).
-
----
-
-## Menu: themes, material, layout
-
-The menu is built on the vendored **Glass Obsidian** library (`glass-obsidian/`, its own
-README documents the widget layer). Its theme page is the settings surface, and the
-rule it is built to is *live*: every control moves the palette or the metrics the same
-frame, there is no Apply button, and no style value is cached in two places.
-
-| Group | What it is |
-|---|---|
-| **base theme** | one of nine presets — Obsidian, Liquid, Ink (very high contrast), **Frost** and **Paper** (light), Ember, Aurora, Verdant, Crimson — plus a contrast knob (0..1, ink to the extreme of its polarity, surfaces flat, hairlines hard) and a glass tint with its own amount |
-| **accent** | ten swatches or a picked colour, a secondary accent for the far end of every gradient (or derived automatically), and five rainbow modes: cycle, sweep, breathe, duotone, off |
-| **glass** | transparency (0..100, text stays opaque), corner radius, window shadow, inner glow |
-| **material** | **polish** (one switch for the whole layer: every strength below reads as 0, the values you dialled stay put, and dragging a dial turns polish back on), then ten strengths — sheen, edge weight, bloom, rim chroma, frost, specular sweep, aurora, track shimmer, hover lift, surface gradient — plus an animate switch and a speed multiplier. 0 turns a layer off entirely; `animate` off freezes the movement and keeps the polish |
-| **layout** | menu width/height, min and max size, ui scale (re-bakes the font atlas), font and title size |
-| **density** | grid columns (1..3), card height, card padding, gutter, row spacing, track thickness, control height, page padding |
-| **navigation** | rail as labels / icons only / hidden, its width, row height, title-bar height, the pinned session card |
-| **detail** | hero cards, one-line hints, collapsible groups, expand/collapse all |
-| **reset** | theme and layout reset separately, because a colour experiment and a size experiment fail differently |
-
-Two things about the shape of it, since they are load-bearing:
-
-* **the rainbow never writes into a setting.** The animated accent is derived from the
-  render clock in `BuildPalette()`, so `ui_accent_color` always holds what you picked:
-  a config saved mid-cycle stores your colour, and turning the mode off restores itself.
-* **a closed group submits no cards.** The collapse state is one `';'`-joined list of
-  closed `"page/group"` ids (`ui_closed_groups`), not a bool per group — the default
-  (everything open) is free, a renamed group costs nothing, and it round-trips.
-
-Every one of those settings is a `ui_*` global in `globals.h`, written and read by
-`features/config/config.cpp` with the rest of the config file, so a saved config carries
-your theme. The look itself is composed once per frame by `BuildPalette()` /
-`ApplyLayout()` in `ui/menu_ui.cpp` — the only place the settings become an
-`obsidian::Palette`. The HUD float windows (fps counter, media badge) read the same
-palette, which is why a light theme does not leave white text floating over the game.
-
-## ESP: strokes, glow, tracers
-
-The ESP used to build its lines by stacking 1px `AddRectFilled` calls — an outline one,
-a colour one, another for the inner edge. That is why the ESP could not be made thicker:
-the width was geometry, not a setting. The strokes now come from one vocabulary
-(`EspWidth` / `StrokeRect` / `StrokeCorners`, in `features/esp/esp.cpp`) that every ESP
-element uses, so three settings reach the whole overlay at once:
-
-* **`esp_line_width`** — one weight for box, corners, skeleton, health bar and tracers.
-  A 2px box with a 1px skeleton looks like three plugins; this is what stops that.
-  (The separate black *outline* toggle is gone: the user's verdict on it twice was that
-  it does nothing, and a second copy of every stroke was the cost of keeping it.)
-* **`esp_glow`** — a dim halo of the *same* colour under a stroke, which is how a line
-  reads as lit rather than pasted on.
-
-On top of that: corner-bracket **length** is a setting (`esp_corner_frac`, a fraction of
-the box's shorter side so a crouched player keeps four matching brackets), the name
-label gets a **plate** (solid or fading downward — a 1px outline is not enough over a
-skybox), and **tracers** draw from a screen anchor to the target's *feet*, because the
-bottom of the box is where a Roblox character actually stands. Tracers can take the
-entity's team/whitelist tint instead of their own colour and can be capped by distance
-without hiding the box, so they stay useful as a "who is around the corner" layer.
-
-`build/menu_shots` renders the real `ui/menu_ui.cpp` headlessly (no GPU, no Windows) and
-checks each of the nine themes for polarity and legibility; `glass-obsidian/preview/`
-holds the resulting gallery.
+### Exiting
+- Title-bar X, or right-click the tray icon → exit (restores writes)
+- Or: `sudo pkill daemon`
 
 ---
 
 ## Architecture
 
 ```
-roblox_external/
-  main.cpp           entry (WinMain), FeatureLoop, AttachLoop, render_ui()
-  platform/          platform.h seam + platform_win.cpp (real impl);
-                     platform_linux.cpp (process_vm + EWMH game rect + the
-                     x11overlay click-through layer), overlay_linux.cpp
-                     (SDL2+GL overlay: transparent, XFixes click-through,
-                     game-rect follow), main_linux.cpp (plug-and-play attach
-                     + sober_scanner/offsets_dynamic PID-local offsets
-  overlay.h/.cpp     transparent DX11 window, ImGui init, input, tray, taskbar
-  menu.cpp           Win32 keybind capture, snapshot reads, config IO, debug tests
+daemon/
+  main.cpp           entry (Linux main), FeatureLoop, AttachLoop, render_ui()
+  platform/          platform.h seam + platform_linux.cpp (real impl);
+                     sober_scanner/offsets_dynamic PID-local offsets
+  overlay.h/.cpp     transparent SDL2+GL window, ImGui init, input, streamproof
+  menu.cpp           Linux keybind capture, snapshot reads, config IO, debug tests
   ui/menu_ui.h/.cpp  full menu UI (Glass Obsidian widgets, platform-free)
   globals.h          all settings as inline globals + LogLine() + g_request_exit
   memory.h/.cpp      chunked read/write helpers (see Memory access), instance readers
-  process.h/.cpp     FindRoblox(), GetRobloxWindow()
+  process.h/.cpp     FindSober(), GetSoberWindow()  (in platform/)
   game.h/.cpp        ReadDatamodel(), GetGameName(), GetPlaceId()
   cache.h/.cpp       background thread (16ms) publishing immutable snapshots
-  offsets.h          offsets for one client version, merged from a dump by
+  offsets.h          offsets for one client version, zeroed on Linux, merged from a dump by
                      glass-obsidian/tools/offsets_regen.py (never pasted - see docs)
-  offsets_live.h/.cpp  runtime offset refresh from public service
+  offsets_dynamic.h/.cpp  runtime offset refresh from sober_scanner
   input_mouse.h      raw mouse delta queue (for freecam mouselook)
   features/          27 dirs, one per feature or shared rule:
                      aimbot  antiafk  camera  click_teleport
@@ -273,57 +191,38 @@ glass-obsidian/      UI library (ImGui public API only)
 ```
 
 **Platform rule:** everything under `features/` plus `memory`, `process`,
-`game`, `cache`, `offsets_live` and `main` compiles against
-`platform/platform.h` alone — no `<Windows.h>` outside the Win32 layer
-(`overlay`, `menu`, `media_tracker`, `config`, `servers_http`, `nt_syscalls`,
-`platform_win`). A Linux port means implementing `platform_linux.cpp`, not
-rewriting features. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §10.
+`game`, `cache`, `offsets_dynamic` and `main` compiles against
+`platform/platform.h` alone — no `<Windows.h>` anywhere. A Windows port would mean
+implementing `platform_win.cpp`, not rewriting features. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §10.
 
 ### Memory access
 
 There is no `ReadProcessMemory` or `WriteProcessMemory` in this binary — not as an
-import, not as a call. Every read and write goes to `NtReadVirtualMemory` /
-`NtWriteVirtualMemory`, invoked *by address* through `nt_syscalls.{h,cpp}`:
+import, not as a call. Every read and write goes to `process_vm_readv` /
+`process_vm_writev`, invoked through `platform/platform.h`:
 
-1. a fresh `ntdll.dll` is mapped from disk and its `.text` replaces the loaded copy
-   (that removes the anti-cheat's hooks from the copy the syscalls are taken from);
-2. syscall numbers are parsed out of the export table at runtime — nothing is
-   hard-coded, so a client version bump cannot leave a stale `mov eax, N` behind;
-3. `IndirectSyscall*` jumps to the `syscall; ret` **inside ntdll**, rather than
-   executing a stub from our own allocation, which is the difference between an
-   unhooked call and a call from a suspicious executable-memory region;
-4. the handle is opened for the four rights actually used
-   (`VM_READ | VM_WRITE | VM_OPERATION | QUERY_INFORMATION`), not `PROCESS_ALL_ACCESS`.
-
-The wrappers used to be named `nt::ReadProcessMemory` / `nt::WriteProcessMemory`,
-which described what they *replace* while implying the thing that matters most is
-still happening. They are `nt::ReadVirtualMemory` / `nt::WriteVirtualMemory` now, and
-`nt_syscalls.h` poisons the WinAPI names with a tripwire `#define` so an accidental
-reintroduction fails to compile instead of quietly adding an import
-(`ROBLOX_ALLOW_WINAPI_RW` opts a TU out; none needs to).
+1. The handle is opened for the current user (same UID as Sober) — no special capabilities needed
+2. `process_vm_readv`/`process_vm_writev` are the honest Linux equivalent of NT syscalls
+3. Offsets are discovered at runtime by `sober_scanner` — no hardcoded offsets, no Windows fallback
 
 `memory.cpp` layers one more thing on top: a read of a range that crosses an unmapped
 page fails *wholesale* at this level, so large reads are retried in shrinking chunks.
-
-What this does **not** do, in case it matters to you: it is not kernel read/write, it
-does not spoof the handle's creator, and `QUERY_INFORMATION` on another process is
-itself enumerable. Anything stronger than this is a different class of tool.
 
 ### Threads
 
 | Thread | Job |
 |---|---|
-| main / render | `overlay::run()` — message pump, ImGui draw, click-through |
+| main / render | `overlay::run()` — SDL2 event pump, ImGui draw, click-through |
 | cache | re-reads DataModel → Players → characters every 16ms |
 | feature | `FeatureLoop()` — all `Run*` features every 1ms |
-| attach | `AttachLoop()` — attach + auto-reconnect, 1s poll |
-| input | `input_thread()` — GetAsyncKeyState polling, feeds ImGui |
-| keyboard hook | WH_KEYBOARD_LL on its own thread (space press queue) |
+| attach | `AttachLoop()` — attach + auto-reconnect, 2Hz poll |
+| input | `input_thread()` — SDL2 key polling, feeds ImGui |
+| x11 hotkey | root-grabbed HOME/F8 (X11) |
 
 ### Data flow
 
 ```
-g_base_address + VisualEngine::Pointer
+LibRoblox base + VisualEngine::Pointer
   → VisualEngine::FakeDataModel
     → FakeDataModel::RealDataModel
       → services (by class name)
@@ -343,9 +242,17 @@ Memory-only features → `FeatureLoop()` (feature thread).
 - **[docs/DOCTRINE.md](docs/DOCTRINE.md)** — the agent operating layer: the six rules
 - **[docs/CONTEXT.md](docs/CONTEXT.md)** — the agent-facing repo map and command reference
 - **[ToDo.md](ToDo.md)** — roadmap and Session Memory
-- **[docs/LIVE_CHECKLIST.md](docs/LIVE_CHECKLIST.md)** — the Windows session: one step per ❓ row, what the answer looks like, what to send back
+- **[docs/LIVE_CHECKLIST.md](docs/LIVE_CHECKLIST.md)** — the Linux session: one step per ❓ row, what the answer looks like, what to send back
 - **[agent/verification/CAPABILITIES.md](agent/verification/CAPABILITIES.md)** — dated capability evidence and the check registry
-- **[mirror/xbps-fetch-mirror-template.txt](mirror/xbps-fetch-mirror-template.txt)** — update delivery mirror (every external update ships as a new `mirror/files/` payload); rule 1: function frozen once proven, payload-only changes; §15 OS-gated serving is imperative
+- **[docs/BOOTSTRAPPER.md](docs/BOOTSTRAPPER.md)** — bootstrapper design (dx9ware shape)
+- **[docs/VOID_INSTALLER_SCHEMATIC.md](docs/VOID_INSTALLER_SCHEMATIC.md)** — Void Linux installer design
+
+---
+
+## Assets
+
+- `Daemon.png` — Full text logo
+- `Daemon2.png` — Smaller icon logo
 
 ---
 

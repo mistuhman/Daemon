@@ -2,7 +2,7 @@
 """Generate offsets_zero_linux.inc from offsets.h — every declared field
 assigned {} so a Linux scan starts from zero, never from a Windows number."""
 import re, sys
-src = open('roblox_external/offsets.h').read().splitlines()
+src = open('daemon/offsets.h').read().splitlines()
 stack, out, pattern = [], [], re.compile(r'^\s*inline\s+\S+\s+(\w+)\s*=\s*[^;]+;')
 ns_open = re.compile(r'^\s*namespace\s+(\w+)\s*\{')
 ns_close = re.compile(r'^\s*\}\s*//?\s*namespace')

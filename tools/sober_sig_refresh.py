@@ -232,7 +232,7 @@ def main():
     print(f"If one candidate above looks right (disp in range, nearby pointer is TaskScheduler), paste:")
     print(f'  static const char SIG_TASKSCHEDULER_LEA[] = "48 8D 0D ? ? ? ? 48 8B D7 E8 ? ? ? ?";')
     print(f"  // hit at 0x{cands[0][0]:x} disp {cands[0][1]:+d} -> ptr@0x{cands[0][2]:x}" if cands else "  // (no hit — widen window)")
-    print(f"into roblox_external/platform/sober_scanner.cpp and set SIG_TASKSCHEDULER_DISP_OFF=3.")
+    print(f"into daemon/platform/sober_scanner.cpp and set SIG_TASKSCHEDULER_DISP_OFF=3.")
 
 if __name__ == "__main__":
     main()

@@ -130,26 +130,26 @@ void OnDestroy(void*, void*) { gtk3::Get()->main_quit(); }
 int RunGtk(int argc, char** argv)
 {
     if (!gtk3::Load(nullptr)) {
-        printf("roblox-external-boot: %s\n"
+        printf("daemon-boot: %s\n"
                "  install GTK3 (e.g. xbps-install gtk+3) or use --console\n",
                gtk3::LastError());
         return 3;
     }
     gtk3::Api* g = gtk3::Get();
     if (!g->init_check(&argc, &argv)) {
-        printf("roblox-external-boot: no graphical display (set DISPLAY or use --console)\n");
+        printf("daemon-boot: no graphical display (set DISPLAY or use --console)\n");
         return 3;
     }
 
     g_app.window = g->window_new(gtk3::WIN_TOPLEVEL);
-    g->window_set_title(g_app.window, "roblox-external bootstrapper");
+    g->window_set_title(g_app.window, "daemon bootstrapper");
     g->window_set_default_size(g_app.window, 560, 420);
     g->window_set_position(g_app.window, gtk3::WIN_POS_CENTER);
 
     void* vbox = g->box_new(gtk3::ORIENT_VERTICAL, 8);
     g->container_add(g_app.window, vbox);
 
-    void* title = g->label_new("roblox-external — Linux / Sober");
+    void* title = g->label_new("Daemon — Linux / Sober");
     g->box_pack_start(vbox, title, 0, 0, 4);
 
     g_app.spinner = g->spinner_new();
