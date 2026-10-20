@@ -28,6 +28,7 @@ and missing, `--checks` says so.
 | `daemon/imgui/` | vendored Dear ImGui 1.91.1 (SDL2+OpenGL3 backends only) |
 | `glass-obsidian/` | the UI library, its headless harness, its software rasteriser, and the shot gallery |
 | `glass-obsidian/tools/check_win_tu.sh` | parses the app's TUs against a stub `<Windows.h>` — proves no Windows headers leak (runs off Windows) |
+| `glass-obsidian/tools/link_seam_check.sh` | compiles every TU the CMake build lists (app + bootstrapper) and relocatable-links them — any undefined symbol that is ours is the seam break the operator's box would die on |
 | `glass-obsidian/tools/menu_shots.cpp` | renders the real `ui/menu_ui.cpp` headlessly and checks nothing draws outside its clip |
 | `docs/ARCHITECTURE.md` | the technical record: motion blocks, offsets pipeline, platform seam, open problems |
 | `docs/CHANGELOG.md` | branch changelog, newest first, with the reasoning |
@@ -43,7 +44,7 @@ node agent/context.ts --quiet          # brief without the doc dumps (large repo
 node agent/context.ts --json           # raw JSON for programmatic use; READ-ONLY (logs nothing)
 node agent/context.ts --probe          # environment + capability probes (pass/fail + detail)
 node agent/context.ts --checks         # the repo's fast invariants (<1s)
-node agent/context.ts --checks=full    # + check_win_tu.sh + both g++ harnesses (build cached in /tmp)
+node agent/context.ts --checks=full    # + check_win_tu.sh + link_seam_check.sh + both g++ harnesses (build cached in /tmp)
 npm run ctx | npm run ctx:probe | npm run ctx:json | npm run ctx:checks
 ```
 

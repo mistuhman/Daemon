@@ -679,28 +679,28 @@ namespace config {
         return out;
     }
 
-    bool Save(const char* name) {
-        if (!name || !name[0]) return false;
+    bool Save(const std::string& name) {
+        if (name.empty()) return false;
         std::string path = GetConfigDir() + "/" + name + ".cfg";
         SaveToFile(path);
         return true;
     }
 
-    bool Load(const char* name) {
-        if (!name || !name[0]) return false;
+    bool Load(const std::string& name) {
+        if (name.empty()) return false;
         std::string path = GetConfigDir() + "/" + name + ".cfg";
         LoadFromFile(path);
         return true;
     }
 
-    bool Delete(const char* name) {
-        if (!name || !name[0]) return false;
+    bool Delete(const std::string& name) {
+        if (name.empty()) return false;
         std::string path = GetConfigDir() + "/" + name + ".cfg";
         return std::filesystem::remove(path);
     }
 
-    bool Rename(const char* from, const char* to) {
-        if (!from || !from[0] || !to || !to[0]) return false;
+    bool Rename(const std::string& from, const std::string& to) {
+        if (from.empty() || to.empty()) return false;
         std::string old_path = GetConfigDir() + "/" + from + ".cfg";
         std::string new_path = GetConfigDir() + "/" + to + ".cfg";
         if (!std::filesystem::exists(old_path)) return false;

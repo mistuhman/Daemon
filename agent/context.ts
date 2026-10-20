@@ -439,6 +439,16 @@ function runFullChecks(): Check[] {
     detail: (lines(tu.out).filter((l) => /^ *FAIL|win32 glue parses|translation unit/.test(l)).slice(0, 3).join(" | ")
       || tu.out.slice(-200) || "(no output)").slice(0, 300),
   });
+  // the link-seam gate: compiles every TU the CMake build lists (app +
+  // bootstrapper) and relocatable-links them; any undefined symbol that is
+  // ours names the seam break the operator's box would die on (2log.txt class)
+  const seam = sh("sh glass-obsidian/tools/link_seam_check.sh", ROOT);
+  checks.push({
+    name: "link-seam",
+    pass: seam.code === 0 && /link-seam: PASS/.test(seam.out),
+    detail: (lines(seam.out).filter((l) => /FAIL|link-seam/.test(l)).slice(0, 3).join(" | ")
+      || seam.out.slice(-200) || "(no output)").slice(0, 300),
+  });
   // glass-obsidian's own invariants + screenshots (13/13 expected, no GPU)
   checks.push(harness(
     "obsidian-headless",
@@ -458,7 +468,7 @@ function runFullChecks(): Check[] {
       join(APP, "features", "esp", "range.h"),
       join(LIB, "tools", "world_ray_test.cpp"),
     ],
-    "g++ -std=c++17 -O2 -I" + APP + " tools/world_ray_test.cpp -o " + join(CHECK_CACHE, "world_ray_test"),
+    "g++ -std=c++17 -O2 -I" + ROOT + " -I" + APP + " tools/world_ray_test.cpp -o " + join(CHECK_CACHE, "world_ray_test"),
     join(CHECK_CACHE, "world_ray_test"),
     join(CHECK_CACHE, "out"),
   ));

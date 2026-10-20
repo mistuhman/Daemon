@@ -44,7 +44,6 @@ set(PLATFORM_SOURCES
   daemon/platform/overlay_linux.cpp
   daemon/platform/main_linux.cpp
   daemon/platform/servers_http_linux.cpp
-  daemon/platform/media_tracker_linux.cpp
   daemon/platform/streamproof_watcher.cpp
 )
 
@@ -53,12 +52,14 @@ set(CORE_SOURCES
   daemon/cache.cpp
   daemon/game.cpp
   daemon/media_tracker.cpp
+  daemon/memory.cpp
   daemon/offsets_live.cpp
   daemon/features/movement/mover.cpp
   daemon/features/aimbot/aimbot.cpp
   daemon/features/antiafk/antiafk.cpp
   daemon/features/camera/camera_drive.cpp
   daemon/features/click_teleport/click_teleport.cpp
+  daemon/features/config/config.cpp
   daemon/features/esp/esp.cpp
   daemon/features/explorer/explorer.cpp
   daemon/features/flight/flight.cpp

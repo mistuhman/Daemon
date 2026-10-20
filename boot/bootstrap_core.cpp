@@ -37,13 +37,11 @@ int ReadYama()
     return v;
 }
 
-// The overlay binary, beside this executable. 'daemon' is the build-tree
-// name; 'daemon' is what assets/install.sh installs it as.
+// The overlay binary, beside this executable: 'daemon' in the build tree and
+// as assets/install.sh installs it (~/.local/bin/daemon next to daemon-boot).
 std::string OverlayPath()
 {
-    const std::string dir = platform::ExeDir();
-    if (FileExists(dir + "daemon")) return dir + "daemon";
-    return dir + "daemon";
+    return platform::ExeDir() + "daemon";
 }
 
 } // namespace

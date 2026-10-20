@@ -7,6 +7,56 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     THE BUILD RECEIPT (2log.txt) IS EXPLAINED, FIXED AT ITS CAUSE, AND
+         THE GATE THAT WOULD HAVE CAUGHT IT NOW ACTUALLY RUNS. The operator's
+         latest build receipt — committed to main as 2log.txt — is the link
+         dying on ~460 undefined references to the memory layer
+         (is_valid_address, g_memory, read_raw/write_raw, fetchstring,
+         instance::*, mem::*, config::*). Every one of those symbols is
+         defined in daemon/memory.cpp and daemon/features/config/config.cpp
+         — the two TUs the CMake translation never put in CORE_SOURCES. The
+         Windows project had them in the .slnx (check_win_tu.sh's old TU
+         list remembers); the Linux CMake translation dropped them, and
+         every payload build since has carried the same landmine (payload
+         008's CMakeLists.txt is byte-equal here). Three link fixes, in
+         order of appearance: add the two TUs; resolve the media:: multiple
+         definition (daemon/media_tracker.cpp and platform/media_tracker_
+         linux.cpp both defined the same stub API — the core stub with the
+         mutex-guarded snapshot stays, the empty seam duplicate leaves the
+         build); align config::Save/Load/Delete/Rename with config.h's
+         const std::string& (the .cpp defined const char* overloads, so the
+         four call sites in menu_linux.cpp could never resolve even with
+         config.cpp compiled). The full headless build now links both
+         binaries — build/daemon and build/daemon-boot — and the bootstrapper
+         smoke suite (boot/test/smoke.sh) is 7/7 against the real binary.
+         The gate half of the story: glass-obsidian/tools/link_seam_check.sh
+         — the gate the previous entry promises ("compiles every TU and
+         asserts nothing of ours stays undefined") — was hollow in the tree:
+         its first python heredoc was missing its EOF terminator, so the
+         heredoc ate the whole file and the script printed the source list
+         and exited 0 without compiling anything. That is how a link break
+         this loud shipped. The body is now real (compile every TU the CMake
+         parse lists — app + bootstrapper — with SDL/X11 defines when the
+         headers are reachable, ld -r, then classify every undefined symbol
+         by its MANGLED name: C symbols may stay undefined, C++-mangled
+         non-libstdc++ may not), and it is proven both ways: against the
+         2log source shape (memory.cpp + config.cpp removed) it FAILs and
+         names 21 seam breaks verbatim, exactly the receipt's symbol set;
+         against this tree it passes 56 TUs with zero seams. It now runs in
+         `--checks=full` as `link-seam`. While proving that suite green,
+         three more fossils fell: check_win_tu.sh baked literal quotes into
+         its default OBSIDIAN_APP_DIR (the host app could never be found),
+         gated on the Windows-era menu.cpp sentinel, and carried an MSVC
+         std::thread tripwire that would have false-failed legal Linux
+         threading — sentinel and TU list are the Linux tree now, the
+         tripwire is gone with a comment saying why; the features-geometry
+         harness compiled tools/world_ray_test.cpp with -I<repo>/daemon
+         while the file includes "daemon/features/..." — include root is
+         the repo now; and bootstrap_core dropped the rename's dead
+         OverlayPath branch ('external' → 'daemon'). `--checks=full` is
+         5/5 green (win32-tu-parse, link-seam, obsidian-headless 13/13,
+         features-geometry, menu-shots).
+```
 HEAD     THE APP OPENS AS A BOOTSTRAPPER (dx9ware shape) — and the build break
          it was built against is fixed at its cause. Payload 012 shipped a
          binary the Void box could not link: platform::HasGraphicalDisplay was
