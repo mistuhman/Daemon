@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="imgui">
+      <UniqueIdentifier>{1A2B3C4D-1111-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="imgui\backends">
+      <UniqueIdentifier>{1A2B3C4D-2222-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="platform">
+      <UniqueIdentifier>{1A2B3C4D-6666-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="data">
+      <UniqueIdentifier>{1A2B3C4D-5555-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features">
+      <UniqueIdentifier>{1A2B3C4D-3333-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\aimbot">
+      <UniqueIdentifier>{1A2B3C4D-4001-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\esp">
+      <UniqueIdentifier>{1A2B3C4D-4002-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\flight">
+      <UniqueIdentifier>{1A2B3C4D-4003-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\movement">
+      <UniqueIdentifier>{1A2B3C4D-4020-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\noclip">
+      <UniqueIdentifier>{1A2B3C4D-4004-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\walkspeed">
+      <UniqueIdentifier>{1A2B3C4D-4005-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\click_teleport">
+      <UniqueIdentifier>{1A2B3C4D-4006-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\infinite_jump">
+      <UniqueIdentifier>{1A2B3C4D-4007-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\fov_changer">
+      <UniqueIdentifier>{1A2B3C4D-4008-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\inventory_checker">
+      <UniqueIdentifier>{1A2B3C4D-4009-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\skybox_changer">
+      <UniqueIdentifier>{1A2B3C4D-4010-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\hitbox_expander">
+      <UniqueIdentifier>{1A2B3C4D-4011-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\config">
+      <UniqueIdentifier>{1A2B3C4D-4012-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\servers">
+      <UniqueIdentifier>{7d2f8a41-5c3b-4e07-9a6e-1b0c9d8e4f52}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\players">
+      <UniqueIdentifier>{1A2B3C4D-4013-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ui">
+      <UniqueIdentifier>{b7c1a902-5e43-4a19-9d3f-5a2f0f0d1a01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="obsidian">
+      <UniqueIdentifier>{1A2B3C4D-5001-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="offsets_fallback.json"><Filter>data</Filter></Content>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="overlay.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="nt_syscalls.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="media_tracker.cpp"><Filter>Source Files</Filter></ClCompile>
+    <MASM Include="syscall_stub.asm"><Filter>Source Files</Filter></MASM>
+    <ClCompile Include="platform\platform_win.cpp"><Filter>platform</Filter></ClCompile>
+    <ClCompile Include="offsets_live.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="menu.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="memory.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="process.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="game.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="cache.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="imgui\imgui.cpp"><Filter>imgui</Filter></ClCompile>
+    <ClCompile Include="imgui\imgui_draw.cpp"><Filter>imgui</Filter></ClCompile>
+    <ClCompile Include="imgui\imgui_tables.cpp"><Filter>imgui</Filter></ClCompile>
+    <ClCompile Include="imgui\imgui_widgets.cpp"><Filter>imgui</Filter></ClCompile>
+    <ClCompile Include="imgui\backends\imgui_impl_dx11.cpp"><Filter>imgui\backends</Filter></ClCompile>
+    <ClCompile Include="imgui\backends\imgui_impl_win32.cpp"><Filter>imgui\backends</Filter></ClCompile>
+    <ClCompile Include="features\aimbot\aimbot.cpp"><Filter>features\aimbot</Filter></ClCompile>
+    <ClCompile Include="features\esp\esp.cpp"><Filter>features\esp</Filter></ClCompile>
+    <ClCompile Include="features\flight\flight.cpp"><Filter>features\flight</Filter></ClCompile>
+    <ClCompile Include="features\movement\mover.cpp"><Filter>features\movement</Filter></ClCompile>
+    <ClCompile Include="features\players\players.cpp"><Filter>features\players</Filter></ClCompile>
+    <ClCompile Include="features\servers\servers.cpp"><Filter>features\servers</Filter></ClCompile>
+    <ClCompile Include="features\servers\servers_http.cpp"><Filter>features\servers</Filter></ClCompile>
+    <ClCompile Include="features\noclip\noclip.cpp"><Filter>features\noclip</Filter></ClCompile>
+    <ClCompile Include="features\walkspeed\walkspeed.cpp"><Filter>features\walkspeed</Filter></ClCompile>
+    <ClCompile Include="features\click_teleport\click_teleport.cpp"><Filter>features\click_teleport</Filter></ClCompile>
+    <ClCompile Include="features\infinite_jump\infinite_jump.cpp"><Filter>features\infinite_jump</Filter></ClCompile>
+    <ClCompile Include="features\fov_changer\fov_changer.cpp"><Filter>features\fov_changer</Filter></ClCompile>
+    <ClCompile Include="features\inventory_checker\inventory_checker.cpp"><Filter>features\inventory_checker</Filter></ClCompile>
+    <ClCompile Include="features\skybox_changer\skybox_changer.cpp"><Filter>features\skybox_changer</Filter></ClCompile>
+    <ClCompile Include="features\hitbox_expander\hitbox_expander.cpp"><Filter>features\hitbox_expander</Filter></ClCompile>
+    <ClCompile Include="features\config\config.cpp"><Filter>features\config</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\glass.cpp"><Filter>obsidian</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\palette.cpp"><Filter>obsidian</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\theme.cpp"><Filter>obsidian</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\window.cpp"><Filter>obsidian</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\axiom.cpp"><Filter>obsidian</Filter></ClCompile>
+    <ClCompile Include="ui\menu_ui.cpp"><Filter>ui</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="globals.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="input_mouse.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="memory.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="process.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="game.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="platform\platform.h"><Filter>platform</Filter></ClInclude>
+    <ClInclude Include="offsets.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="offsets_live.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="cache.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="world_detect.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="overlay.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="nt_syscalls.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="media_tracker.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="features\aimbot\aimbot.h"><Filter>features\aimbot</Filter></ClInclude>
+    <ClInclude Include="features\esp\esp.h"><Filter>features\esp</Filter></ClInclude>
+    <ClInclude Include="features\flight\flight.h"><Filter>features\flight</Filter></ClInclude>
+    <ClInclude Include="features\movement\mover.h"><Filter>features\movement</Filter></ClInclude>
+    <ClInclude Include="features\players\players.h"><Filter>features\players</Filter></ClInclude>
+    <ClInclude Include="features\servers\servers.h"><Filter>features\servers</Filter></ClInclude>
+    <ClInclude Include="features\servers\servers_json.h"><Filter>features\servers</Filter></ClInclude>
+    <ClInclude Include="features\servers\servers_http.h"><Filter>features\servers</Filter></ClInclude>
+    <ClInclude Include="features\noclip\noclip.h"><Filter>features\noclip</Filter></ClInclude>
+    <ClInclude Include="features\walkspeed\walkspeed.h"><Filter>features\walkspeed</Filter></ClInclude>
+    <ClInclude Include="features\click_teleport\click_teleport.h"><Filter>features\click_teleport</Filter></ClInclude>
+    <ClInclude Include="features\click_teleport\tp_math.h"><Filter>features\click_teleport</Filter></ClInclude>
+    <ClInclude Include="features\infinite_jump\infinite_jump.h"><Filter>features\infinite_jump</Filter></ClInclude>
+    <ClInclude Include="features\fov_changer\fov_changer.h"><Filter>features\fov_changer</Filter></ClInclude>
+    <ClInclude Include="features\inventory_checker\inventory_checker.h"><Filter>features\inventory_checker</Filter></ClInclude>
+    <ClInclude Include="features\skybox_changer\skybox_changer.h"><Filter>features\skybox_changer</Filter></ClInclude>
+    <ClInclude Include="features\hitbox_expander\hitbox_expander.h"><Filter>features\hitbox_expander</Filter></ClInclude>
+    <ClInclude Include="features\config\config.h"><Filter>features\config</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\obsidian.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\detail.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\palette.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\theme.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\glass.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\window.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\axiom.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="ui\menu_ui.h"><Filter>ui</Filter></ClInclude>
+  </ItemGroup>
+</Project>
