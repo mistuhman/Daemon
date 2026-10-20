@@ -1,0 +1,7 @@
+build/
+*.o
+imgui.ini
+
+# the headless demo writes its raw renders wherever it is run from; the
+# committed set is out/ (see tools/encode_shots.py), not these.
+/*.png
