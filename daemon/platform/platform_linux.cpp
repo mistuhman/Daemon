@@ -863,6 +863,18 @@ int WindowDepth()
     return g_depth;
 }
 
+bool CompositorActive()
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d) return false;
+    char name[32];
+    snprintf(name, sizeof(name), "_NET_WM_CM_S%d", DefaultScreen(d));
+    const Atom a = XInternAtom(d, name, True);
+    if (a == None) return false;
+    return XGetSelectionOwner(d, a) != None;
+}
+
 bool ArgbVisualAvailable()
 {
     std::lock_guard<std::mutex> lk(g_ctl_mutex);
@@ -1159,9 +1171,18 @@ const char* StatusLine()
             else if (aw) active = 'o';
         }
     }
+    // Inline (the mutex is held — CompositorActive() would deadlock): does a
+    // compositing manager own _NET_WM_CM_Sn right now?
+    int cm = 0;
+    {
+        char cm_name[32];
+        snprintf(cm_name, sizeof(cm_name), "_NET_WM_CM_S%d", DefaultScreen(d));
+        const Atom cm_atom = XInternAtom(d, cm_name, True);
+        if (cm_atom != None && XGetSelectionOwner(d, cm_atom) != None) cm = 1;
+    }
     snprintf(g_status, sizeof(g_status),
-             "x11: window=%s depth=%d or=%d viewable=%d active=%c xfixes=%d input=%s hotkeys=%s pid=%u follow=%s",
-             g_self ? "found" : "not found", g_depth, or_redir, viewable, active,
+             "x11: window=%s depth=%d or=%d viewable=%d active=%c cm=%d xfixes=%d input=%s hotkeys=%s pid=%u follow=%s",
+             g_self ? "found" : "not found", g_depth, or_redir, viewable, active, cm,
 #if defined(HAS_XFIXES)
              1,
 #else
@@ -1190,6 +1211,7 @@ bool StartToggleHotkeys(void (*)()) { return false; }
 bool EnsureAboveGame() { return false; }
 bool FocusGameWindow() { return false; }
 int WindowDepth() { return 0; }
+bool CompositorActive() { return false; }
 bool ArgbVisualAvailable() { return false; }
 uint64_t ArgbVisualId() { return 0; }
 bool GameWindowRect(int&, int&, int&, int&) { return false; }

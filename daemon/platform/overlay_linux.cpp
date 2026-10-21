@@ -531,8 +531,9 @@ static bool TryCreateWindow() {
     s_click_through = !g_state.menu_open;
     if (!x11overlay::SetClickThrough(s_click_through)) s_click_through = false;
     s_input_last_n = -1;   // nothing issued through the rect path yet
-    LogLine("Daemon: transparent overlay active — %dx%d+%d+%d, ARGB depth 32, XFixes click-through armed%s",
+    LogLine("Daemon: transparent overlay active — %dx%d+%d+%d, ARGB depth 32, XFixes click-through armed, compositor=%s%s",
             s_geom_w, s_geom_h, s_geom_x, s_geom_y,
+            x11overlay::CompositorActive() ? "on" : "OFF (nothing blends ARGB — report this)",
             g_state.menu_open ? "" : " (menu closed: click-through on)");
     return true;
 }

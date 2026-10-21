@@ -68,6 +68,13 @@ bool StartToggleHotkeys(void (*on_toggle)());
 // alpha; 24 => opaque-only fallback). 0 when unknown.
 int WindowDepth();
 
+// True when a compositing manager owns the _NET_WM_CM_Sn selection for this
+// screen — the EWMH way to ask "is anything actually blending ARGB windows
+// right now". The 013 receipt printed xfwm4 use_compositing=false from the
+// config while the overlay visibly blended, so the overlay logs this runtime
+// fact alongside: config and reality are not always the same thing.
+bool CompositorActive();
+
 // True when the default screen offers a 32-bit TrueColor visual - the
 // precondition for per-pixel alpha. Decided BEFORE window creation so the
 // overlay can pick borderless-always-on-top flags up front instead of

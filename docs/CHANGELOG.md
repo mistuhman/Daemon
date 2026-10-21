@@ -7,6 +7,39 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     PAYLOAD 014 — NAME THE CRASH, DON'T GUESS IT. The 013 receipt: the
+         overlay is now sticky over the game ("never leaves sober"), clicks
+         pass through, the standalone run draws the menu and plates over
+         nothing — the OR window, follow, input scope and cost tiers all
+         proven live. What remains is "sober still crashes, like always
+         whenever daemon is loaded", and the operator is right that guessing
+         is over: Sober runs the ANDROID client — no Hyperion there (it is
+         Windows-only), and Sober's crash landscape is dominated by
+         RBXCRASH: OutOfMemory / OutOfMemoryGraphics — VRAM exhaustion, worst
+         on NVIDIA without spillover and iGPUs, with a DOCUMENTED FFlag fix
+         (VinegarHQ Troubleshooting; dyokism/sober-fastflags; vinegarhq/sober
+         issues #1141 #1600 #2374). Our overlay is a second GL context plus a
+         fullscreen ARGB window on the same GPU — a client already at its
+         VRAM ceiling tips over exactly when it appears, which is what
+         "crashes whenever daemon is loaded" looks like. The client's error
+         screen QUOTES the RBXCRASH reason, and its log at
+         ~/.var/app/org.vinegarhq.Sober/data/sober/appData/logs/latest.log
+         holds the line. So 014 makes the receipts name it: the setup doctor
+         now prints the GPU (lspci), the last RBXCRASH lines from Sober's own
+         log, and — when OutOfMemory is in there — the documented
+         DFIntTextureQualityOverride/DFFlagTextureQualityOverrideEnabled fix
+         verbatim with its config path. The overlay also logs the RUNTIME
+         compositor truth (who owns _NET_WM_CM_Sn) next to the config's
+         xfwm4 use_compositing (the 013 receipt said false while the overlay
+         visibly blended — both facts belong in the next receipt; status
+         gained cm=, computed inline because the mutex is held). And a real
+         bookkeeping bug: setup.sh hardcoded "ti-13" into .daemon-iteration,
+         so daemon-013 (a ti-14 build) was mislabeled and the receipt said
+         "current (ti-13)" — the marker now derives from CMakeLists'
+         DAEMON_ITERATION, the same string baked into the binary.
+         Compile-proven: platform_linux x3 shapes, overlay_linux x2 — clean
+         at -Wall -Wextra -Wpedantic; setup.sh sh -n clean.
+```
 HEAD     PAYLOAD 013 — THE COST CONTRACT, THE WM BYPASS, AND THE OVERLAY THAT
          STOPS DISAPPEARING. The 012 receipt came in three parts: the overlay
          now sat on the game (follow fix proven live) but "disappears

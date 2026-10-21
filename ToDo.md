@@ -122,8 +122,6 @@ Logged automatically by `node agent/context.ts` — the 12 most recent entries a
 mirrored here from `agent/memory/session.jsonl` (which keeps everything).
 
 <!-- session-log:start -->
-- 2026-10-20T10:49:26.871Z · arena/f3c07cfc-daemon@39b2df1 · context pass + checks (dirty:8)
-- 2026-10-20T10:51:30.885Z · arena/f3c07cfc-daemon@39b2df1 · context pass + full checks (dirty:8)
 - 2026-10-20T10:51:57.158Z · arena/f3c07cfc-daemon@39b2df1 · context pass + full checks (dirty:8)
 - 2026-10-20T10:52:01.066Z · arena/f3c07cfc-daemon@39b2df1 · context pass + checks (dirty:8)
 - 2026-10-20T13:13:55.357Z · arena/f3c07cfc-daemon@789a004 · context pass + checks (dirty:3)
@@ -134,4 +132,6 @@ mirrored here from `agent/memory/session.jsonl` (which keeps everything).
 - 2026-10-21T07:33:13.678Z · arena/6bd2b9b2-daemon@b19f4f6 · ti-13 payload 012 staged: follow targets compete on area within evidence tier (attach pid > sober guess > class gate, >=320x240), XFixes input shape scoped to the menu's own windows via SetInputRects (menuui::LastRect/FeatureRect), --locked starts menu closed (click-through at launch), StatusLine follow= d-decl compile fix (main was broken in X11 shape), input=thru|menu|full wording. 5-shape compile proof vs real headers (mirror/libX11, rwiggins/xorgproto, libXfixes mirror, SDL 2.30.10, libglvnd GL/KHR). (dirty:7)
 - 2026-10-21T08:33:45.369Z · arena/2c231ec3-daemon@6951347 · context pass + checks (dirty:8)
 - 2026-10-21T08:33:45.635Z · arena/2c231ec3-daemon@6951347 · ti-14 payload 013: tiered presentation (menu=interactive, ESP=33ms, plates=500ms, idle=UNMAP -> game unredirected), cache walk gated 16ms<->250ms on consumers, overlay override-redirect via SDL_X11_FORCE_OVERRIDE_REDIRECT + AttachWindow(xid from WMInfo) + XQueryTree EnsureAboveGame @100ms, menu focus click-to-grab/hand-back, StatusLine or/viewable/active + 10s heartbeat, doctor prints xfwm4 compositing facts, menu_linux %.31s fix. 012 receipt: game FPS 4->20 (compositor bill), overlay vanishes on game focus (xfwm4 fullscreen stacking), Sober error screen at launch (suspect ban, not us — reads are process_vm_readv; asked for kill-daemon-boot retest + error text). (dirty:10)
+- 2026-10-21T09:06:22.777Z · arena/2c231ec3-daemon@3a19e99 · context pass + checks (dirty:6)
+- 2026-10-21T09:06:22.954Z · arena/2c231ec3-daemon@3a19e99 · ti-15 payload 014: crash diagnosis with sources — Sober=Android client, no Hyperion; dominant crash class RBXCRASH OutOfMemory/OutOfMemoryGraphics (VinegarHQ troubleshooting + issues #1141/#1600/#2374); doctor now prints GPU + Sober client log RBXCRASH tail from ~/.var/app/org.vinegarhq.Sober/data/sober/appData/logs/latest.log + documented DFIntTextureQualityOverride fix when OOM; overlay logs runtime compositor (_NET_WM_CM_Sn, status cm=, inline due to held mutex); setup.sh marker now derived from CMakeLists DAEMON_ITERATION (013 mislabeled ti-13). 013 receipt: sticky overlay + click-through + cost tiers all confirmed; menu in game = HOME/F8 (starts closed); waiting on: error screen text / latest.log tail, GPU model, pkill retest. (dirty:8)
 <!-- session-log:end -->
