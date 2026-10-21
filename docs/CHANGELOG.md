@@ -7,6 +7,45 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     PAYLOAD 012 — CLICK-THROUGH THAT SURVIVES THE MENU, AND THE RIGHT
+         FOLLOW TARGET. The 011 receipt arrived as a screenshot: overlay up,
+         transparent (ARGB worked), menu drawn — parked over a Firefox tab
+         titled "Roblox" on monitor 2 while the game ran elsewhere, and
+         "no click through since whenever i clicked on it itd move around".
+         Two causes, both fixed for 012. (1) FOLLOW: payload 011 still matched
+         game windows by TITLE alone, so the browser tab won; the class-gated
+         finder merged after 011 shipped (WM_CLASS must name sober/roblox,
+         _NET_WM_PID of the attach pid or any Sober-named process first) and
+         this payload adds the second lesson — when Sober's launcher AND the
+         Roblox client are both mapped, candidates now compete on AREA within
+         their evidence tier (attach pid > Sober-pid guess > class gate), so
+         the overlay covers the CLIENT, not whichever window was mapped
+         first, and never a window under 320x240. StatusLine names the
+         followed window (follow=org.vinegarhq.Sober | <title>) so the next
+         receipt settles target choice in one line. (2) INPUT: "menu open"
+         used to mean the WHOLE overlay was an input sink — clicks on empty
+         transparent pixels landed on the window (and dragged things,
+         because the menu lives in that window). The XFixes input shape is
+         now scoped by x11overlay::SetInputRects to EXACTLY the menu's own
+         windows (main column + open feature windows, rects published by
+         menuui::LastRect/FeatureRect each frame; the fps/media plates are
+         read-only and stay pass-through), re-issued only when the rects
+         move; menu closed is still the empty shape. --locked additionally
+         starts with the menu CLOSED — the overlay comes up over the game
+         click-through and takes no focus; HOME/F8 opens it, and even then
+         only the menu's pixels are interactive. BONUS FIX caught by the
+         compile gate this time: StatusLine's follow= block (merged after
+         011, never built by anyone) used an undeclared `d` — main did not
+         compile in the X11 shape and the operator's next build would have
+         died at the setup gate. Compile-proven against REAL headers
+         re-fetched via codeload/API (mirror/libX11, rwiggins/xorgproto,
+         freedesktop-unofficial-mirror libXfixes, SDL release-2.30.10,
+         libglvnd's GL/gl.h+glx.h+glxext.h+KHR/khrplatform.h): five shapes
+         at -Wall -Wextra -Wpedantic — platform_linux with
+         X11+XFixes+SDL+GLX, X11-only, and stubs; overlay_linux with
+         SDL+GL+X11 and headless. Status wording: click-through=on/off became
+         input=thru|menu|full.
+```
 HEAD     PAYLOAD 010 — THE OVERLAY WINDOW FIX (baseline-009 gap #1) and the
          crash log (gap #2's first half). "Overlay didn't launch over Sober"
          is now named to the line: ArgbVisualId() picked the 32-bit ARGB X
