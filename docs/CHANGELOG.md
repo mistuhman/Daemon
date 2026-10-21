@@ -7,6 +7,145 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     PAYLOAD 016 — THE DOCTOR LEARNS TO READ THE SHELF. The ti-16 receipt:
+         "it still crashed" (with 015 loaded — which, by design, changed zero
+         daemon behavior; it shipped the microscope) and the microscope itself
+         failed on the operator's box: the client log lives in the exact flatpak
+         logs dir we probe, but under a DIFFERENT FILE NAME, so the hard-coded
+         latest.log came up empty and the self-diagnosis never ran. Fixed the
+         generic way: sober-doctor now enumerates each known logs directory
+         (flatpak ~/.var/app, standalone ~/.local/share, legacy ~/.sober) and
+         analyzes the NEWEST regular file in it, whatever it is called; an
+         explicit path argument still wins; the not-found message now suggests
+         ls -lt of the dir so the operator can see their install's naming.
+         Verified three ways against the operator's real log: renamed file in
+         the flatpak dir (discovered + full verdict), explicit path argument,
+         and empty home (helpful message). No C++ changes — ti-16's binary is
+         the crash-relevant surface until the fresh log speaks. The case state:
+         the one log we have shows a healthy client (139fps) closed by an
+         external request; the ti-16 test did not control for the prime
+         suspect (Fleasion's terminate-on-proxy-start), and the operator's
+         screenshot of the failure is a small white dialog whose text we
+         cannot read from here — both receipts are now the whole case.
+```
+HEAD     PAYLOAD 015 — THE LOG SPOKE: IT WAS NEVER A CRASH. The operator's
+         Sober client log (rblxlog.txt) ends in a CLEAN Android teardown —
+         nativeAppBridgeV2LeaveGame → pause destroyView:true → stop →
+         destroyLuaApp → setStage: None — with the session healthy until the
+         instant of death: averageFPS=139, Vulkan 1.4, qualityLevel 21, 20
+         cores, 31GB RAM, zero RBXCRASH lines, no freeze, no timeout. That
+         tail is what an EXTERNAL close request looks like from inside the
+         client; a graphics crash never writes it. The operator identified
+         the requester: Fleasion 2.4.1, their asset-interception proxy,
+         "connecting at the same time" — whose README documents that "Clear
+         Cache on Launch" (ON by default) TERMINATES a running Roblox when
+         the proxy starts, with a Linux bootstrap delay (16.9s join→death
+         here). 86 TLS-verification failures against roblox.com endpoints
+         are the same proxy's MITM fingerprints, and the broken avatar
+         thumbnails ride along. The 64MB gpu_memMB telemetry is the known
+         Sober VRAM-reporting clamp (#2208/#2165) — a red herring at 139fps.
+         Daemon's focus profile is cleared by code audit: the overlay takes
+         keyboard focus ONLY on an explicit click inside the open menu
+         (logged now), hands it straight back on close (logged now), and in
+         the default attached state never touches focus at all; hotkeys come
+         through a root grab, not a focus change; the bootstrapper is pure
+         /proc reads. The manual forensics are now a shipped command for
+         every operator: assets/sober-doctor.sh (installed as
+         ~/.local/bin/sober-doctor) — discovers the client log for ANY
+         install style (flatpak ~/.var/app, standalone ~/.local/share,
+         legacy ~/.sober, plus a bounded find), classifies the death
+         (RBXCRASH + documented OOM FFlag fix vs clean external teardown
+         vs intercepting-proxy fingerprints vs the 64MB clamp quirk), and
+         prints the session's fps/join telemetry so "was it even unhealthy"
+         is answered in the same breath. Also: the build's one warning is
+         dead (menu rail os field copies OSName() with %.47s — bounded read
+         AND write, matching the codebase's house style). Compile-proven:
+         platform_linux x3 shapes, overlay_linux x2, menu_linux — clean;
+         all three scripts sh -n clean; sober-doctor verified against the
+         operator's real log (all five verdicts fire).
+```
+HEAD     PAYLOAD 014 — NAME THE CRASH, DON'T GUESS IT. The 013 receipt: the
+         overlay is now sticky over the game ("never leaves sober"), clicks
+         pass through, the standalone run draws the menu and plates over
+         nothing — the OR window, follow, input scope and cost tiers all
+         proven live. What remains is "sober still crashes, like always
+         whenever daemon is loaded", and the operator is right that guessing
+         is over: Sober runs the ANDROID client — no Hyperion there (it is
+         Windows-only), and Sober's crash landscape is dominated by
+         RBXCRASH: OutOfMemory / OutOfMemoryGraphics — VRAM exhaustion, worst
+         on NVIDIA without spillover and iGPUs, with a DOCUMENTED FFlag fix
+         (VinegarHQ Troubleshooting; dyokism/sober-fastflags; vinegarhq/sober
+         issues #1141 #1600 #2374). Our overlay is a second GL context plus a
+         fullscreen ARGB window on the same GPU — a client already at its
+         VRAM ceiling tips over exactly when it appears, which is what
+         "crashes whenever daemon is loaded" looks like. The client's error
+         screen QUOTES the RBXCRASH reason, and its log at
+         ~/.var/app/org.vinegarhq.Sober/data/sober/appData/logs/latest.log
+         holds the line. So 014 makes the receipts name it: the setup doctor
+         now prints the GPU (lspci), the last RBXCRASH lines from Sober's own
+         log, and — when OutOfMemory is in there — the documented
+         DFIntTextureQualityOverride/DFFlagTextureQualityOverrideEnabled fix
+         verbatim with its config path. The overlay also logs the RUNTIME
+         compositor truth (who owns _NET_WM_CM_Sn) next to the config's
+         xfwm4 use_compositing (the 013 receipt said false while the overlay
+         visibly blended — both facts belong in the next receipt; status
+         gained cm=, computed inline because the mutex is held). And a real
+         bookkeeping bug: setup.sh hardcoded "ti-13" into .daemon-iteration,
+         so daemon-013 (a ti-14 build) was mislabeled and the receipt said
+         "current (ti-13)" — the marker now derives from CMakeLists'
+         DAEMON_ITERATION, the same string baked into the binary.
+         Compile-proven: platform_linux x3 shapes, overlay_linux x2 — clean
+         at -Wall -Wextra -Wpedantic; setup.sh sh -n clean.
+```
+HEAD     PAYLOAD 013 — THE COST CONTRACT, THE WM BYPASS, AND THE OVERLAY THAT
+         STOPS DISAPPEARING. The 012 receipt came in three parts: the overlay
+         now sat on the game (follow fix proven live) but "disappears
+         whenever i focus on sober", performance "still abysmal" — "<4 fps
+         on the error screen... fixes itself a second later [to] 20 fps" —
+         and Sober itself erroring at every launch (dark dialog, no text
+         OCRable in this sandbox; nothing in the daemon writes to Sober —
+         reads are process_vm_readv — so that screen is most plausibly the
+         banned alt refusing to start, and the receipt test for it is: kill
+         daemon-boot and open Sober alone). Three answers, shipped:
+         (1) COST: the game pays one compositor pass per SWAP of ours, not
+         per its own frame — and 012 swapped a fullscreen 2560x1440 ARGB
+         window at vsync FOREVER because show_fps defaults on, so the
+         compositor recomposited the whole screen 60x/s with the game
+         queued behind it (in 011 the overlay sat over a browser tab, so
+         the game was unredirected and fast; the follow fix moved it onto
+         the game and exposed the bill). Presentation is now tiered: menu
+         open = interactive; live ESP/HUD = 33 ms cap; read-only plates =
+         500 ms (the fps number changes ~1 Hz); NOTHING to draw = the
+         window is UNMAPPED and the game returns to the unredirected fast
+         path (ApplyVisibility gained the idle reason; the log says so).
+         The cache walk gets the same gate: 16 ms only while the menu is
+         open or a memory feature is on, else 250 ms — it was reading the
+         whole instance tree 60x/s for nobody. (2) STACKING: the overlay
+         window is now override-redirect (SDL_X11_FORCE_OVERRIDE_REDIRECT —
+         SDL sets xattr.override_redirect, the same path as TOOLTIP); a WM
+         can never layer an OR window under the focused fullscreen game,
+         which is what "disappears whenever i focus on sober" was (xfwm4
+         kept the fullscreen game above our _NET_WM_STATE_ABOVE managed
+         window and the 250 ms EWMH re-raise war just blinked). Our window
+         id now comes from SDL_GetWindowWMInfo (x11overlay::AttachWindow —
+         the exact xid; the WM_CLASS scan was blind to OR windows since
+         they never enter _NET_CLIENT_LIST), EnsureAboveGame reads the REAL
+         stacking order (XQueryTree children, bottom-to-top) and XRaise-
+         Window wins by construction, checked at 100 ms. Menu keyboard:
+         OR windows are not WM-activatable, so a click inside the menu's
+         input region takes focus (SDL_SetWindowInputFocus) and closing the
+         menu hands it back (FocusGameWindow). (3) DIAGNOSIS: StatusLine
+         grew or= viewable= active= (is the window OR, mapped, who holds
+         focus), a 10 s heartbeat line lands in overlay.log, setup's doctor
+         prints xfwm4 compositing/unredirect_overlays, and the menu's one
+         build warning (menu_linux.cpp snprintf into char[32] from
+         char[64]) is fixed with %.31s. Compile-proven against real headers
+         (SDL 2.30.10 source + mirror/libX11 + rwiggins/xorgproto +
+         libXfixes mirror + libglvnd GL/KHR): platform_linux 3 shapes,
+         overlay_linux 3 shapes (incl. -DSDL_VIDEO_DRIVER_X11 for the
+         SysWMinfo x11 union), cache, menu_linux — all clean at
+         -Wall -Wextra -Wpedantic.
+```
 HEAD     PAYLOAD 012 — CLICK-THROUGH THAT SURVIVES THE MENU, AND THE RIGHT
          FOLLOW TARGET. The 011 receipt arrived as a screenshot: overlay up,
          transparent (ARGB worked), menu drawn — parked over a Firefox tab

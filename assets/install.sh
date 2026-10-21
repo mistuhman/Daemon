@@ -10,12 +10,21 @@ if [ ! -x "$BOOT" ]; then BOOT="$ROOT/daemon-boot"; fi
 if [ ! -x "$BOOT" ]; then echo "build/daemon-boot not found — run setup.sh first"; exit 1; fi
 DST_BIN="$HOME/.local/bin/daemon"
 DST_BOOT="$HOME/.local/bin/daemon-boot"
+DST_SOBERDOC="$HOME/.local/bin/sober-doctor"
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications"
 
 # Install binaries
 cp -f "$BIN" "$DST_BIN"
 cp -f "$BOOT" "$DST_BOOT"
 chmod +x "$DST_BIN" "$DST_BOOT"
+
+# The Sober-log forensics script — one command answers "what killed Sober this
+# time" for any install style. Read-only; safe to run whenever.
+if [ -f "$ROOT/assets/sober-doctor.sh" ]; then
+    cp -f "$ROOT/assets/sober-doctor.sh" "$DST_SOBERDOC"
+    chmod +x "$DST_SOBERDOC"
+    echo "installed $DST_SOBERDOC (run 'sober-doctor' after any Sober close)"
+fi
 
 # Install icons to hicolor theme (Daemon2.png is the square icon, 2048x2048)
 for size in 16 24 32 48 64 128 256 512; do

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Daemon Void setup — current testing iteration ti-13
+# Daemon Void setup — iteration marker derived from CMakeLists (DAEMON_ITERATION)
 #
 # The 004 build failed with make's Error 2 hidden by `| tail -n 20`: the real
 # compiler error scrolled out of the photographed output. This version keeps
@@ -65,6 +65,30 @@ ls -lh "$ROOT/build/daemon-boot" >/dev/null 2>&1 && echo "BOOT_DONE=YES" || echo
 # ---- doctor: the walls a fresh operator box puts up (docs/BOOTSTRAPPER.md) --
 echo "[doctor] ---- readiness scan (daemon-boot --check) ----"
 "$ROOT/build/daemon-boot" --check 2>&1 || true
+# Compositor facts, read-only (the 013 performance story lives here): whether
+# xfwm4 composites at all, and whether it unredirects fullscreen windows. An
+# ARGB overlay over the game only works with compositing ON, and fullscreen
+# unredirect is the fast path the game loses while anything overlaps it.
+# NOTE: this is the CONFIG; the overlay logs the RUNTIME truth (a compositing
+# manager owns _NET_WM_CM_Sn) — the 013 receipt had config=false while the
+# overlay visibly blended, so both facts are now on the table.
+if command -v xfconf-query >/dev/null 2>&1; then
+    echo "[doctor] xfwm4 compositing=$(xfconf-query -c xfwm4 -p /general/use_compositing 2>/dev/null || echo default)"
+    echo "[doctor] xfwm4 unredirect_overlays=$(xfconf-query -c xfwm4 -p /general/unredirect_overlays 2>/dev/null || echo default)"
+fi
+# GPU — the Sober crash classes are graphics-memory classes; name the card.
+if command -v lspci >/dev/null 2>&1; then
+    lspci 2>/dev/null | grep -i -E "vga|3d controller" | head -n 2 | sed 's/^/[doctor] gpu: /'
+fi
+# ---- Sober's own crash log: the client names its death ----------------------
+# "sober crashes whenever daemon is loaded" needs the log, not a guess. The
+# full forensics (log discovery for ANY install style + death classification:
+# RBXCRASH vs clean external teardown vs intercepting-proxy fingerprints) lives
+# in sober-doctor.sh and is re-runnable ANYTIME as ~/.local/bin/sober-doctor —
+# the file appears per session, so run it right after the next close.
+if [ -f "$ROOT/assets/sober-doctor.sh" ]; then
+    sh "$ROOT/assets/sober-doctor.sh"
+fi
 if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
     Y=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo "?")
     if [ "$Y" != "0" ]; then
@@ -82,8 +106,13 @@ if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
     fi
 fi
 
-printf '%s\n' "ti-13" > "$ROOT/.daemon-iteration"
-echo "[setup] marked current iteration ti-13 ($ROOT/.daemon-iteration)"
+# The iteration marker drives prior-iteration cleanup — it must say what the
+# BINARY says, not a hand-baked label (013's receipt printed "marked current
+# iteration ti-13" over a ti-14 build because this line was hardcoded).
+ITER=$(grep -o 'DAEMON_ITERATION "ti-[0-9]*"' "$ROOT/CMakeLists.txt" 2>/dev/null | head -n 1 | grep -o 'ti-[0-9]*')
+[ -n "$ITER" ] || ITER=unknown
+printf '%s\n' "$ITER" > "$ROOT/.daemon-iteration"
+echo "[setup] marked current iteration $ITER ($ROOT/.daemon-iteration)"
 
 echo "[setup] install desktop entry: sh $ROOT/assets/install.sh"
 if sh "$ROOT/assets/install.sh" 2>&1 | tail -n 10; then
