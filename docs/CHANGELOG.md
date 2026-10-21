@@ -7,6 +7,27 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     PAYLOAD 016 — THE DOCTOR LEARNS TO READ THE SHELF. The ti-16 receipt:
+         "it still crashed" (with 015 loaded — which, by design, changed zero
+         daemon behavior; it shipped the microscope) and the microscope itself
+         failed on the operator's box: the client log lives in the exact flatpak
+         logs dir we probe, but under a DIFFERENT FILE NAME, so the hard-coded
+         latest.log came up empty and the self-diagnosis never ran. Fixed the
+         generic way: sober-doctor now enumerates each known logs directory
+         (flatpak ~/.var/app, standalone ~/.local/share, legacy ~/.sober) and
+         analyzes the NEWEST regular file in it, whatever it is called; an
+         explicit path argument still wins; the not-found message now suggests
+         ls -lt of the dir so the operator can see their install's naming.
+         Verified three ways against the operator's real log: renamed file in
+         the flatpak dir (discovered + full verdict), explicit path argument,
+         and empty home (helpful message). No C++ changes — ti-16's binary is
+         the crash-relevant surface until the fresh log speaks. The case state:
+         the one log we have shows a healthy client (139fps) closed by an
+         external request; the ti-16 test did not control for the prime
+         suspect (Fleasion's terminate-on-proxy-start), and the operator's
+         screenshot of the failure is a small white dialog whose text we
+         cannot read from here — both receipts are now the whole case.
+```
 HEAD     PAYLOAD 015 — THE LOG SPOKE: IT WAS NEVER A CRASH. The operator's
          Sober client log (rblxlog.txt) ends in a CLEAN Android teardown —
          nativeAppBridgeV2LeaveGame → pause destroyView:true → stop →

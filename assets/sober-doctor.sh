@@ -15,32 +15,42 @@
 LABEL="[sober-doctor]"
 
 # ---- 1. find the client log (install-dependent) -----------------------------
-# Flatpak keeps XDG data under ~/.var/app; a standalone/bare Sober keeps it
-# under ~/.local/share (or legacy ~/.sober). The file appears/rotates per
-# session — if nothing is readable yet, run this again right after the next
-# close; also check previous.log beside it.
+# Flatpak keeps XDG data under ~/.var/app; a standalone/bare Sober under
+# ~/.local/share (or legacy ~/.sober). The FILE NAME varies by version — the
+# operator's ti-16 install keeps a differently-named file in the flatpak dir,
+# which is exactly why the first doctor missed it. So: enumerate the directory
+# and analyze the NEWEST regular file, whatever it is called. An explicit path
+# argument always wins.
 LOG=""
-for CAND in \
-    "$HOME/.var/app/org.vinegarhq.Sober/data/sober/appData/logs/latest.log" \
-    "$HOME/.local/share/sober/appData/logs/latest.log" \
-    "$HOME/.sober/appData/logs/latest.log"
-do
-    if [ -r "$CAND" ]; then LOG="$CAND"; break; fi
-done
-if [ -z "$LOG" ]; then
-    LOG=$(find "$HOME/.var/app/org.vinegarhq.Sober" "$HOME/.local/share/sober" \
-               "$HOME/.sober" -name latest.log -path '*appData/logs*' 2>/dev/null | head -n 1)
+if [ "$#" -ge 1 ] && [ -r "$1" ]; then
+    LOG="$1"
+else
+    for DIR in \
+        "$HOME/.var/app/org.vinegarhq.Sober/data/sober/appData/logs" \
+        "$HOME/.local/share/sober/appData/logs" \
+        "$HOME/.sober/appData/logs"
+    do
+        [ -d "$DIR" ] || continue
+        for F in $(ls -t "$DIR" 2>/dev/null); do
+            if [ -f "$DIR/$F" ]; then LOG="$DIR/$F"; break; fi
+        done
+        [ -n "$LOG" ] && break
+    done
+    if [ -z "$LOG" ]; then
+        LOG=$(find "$HOME/.var/app/org.vinegarhq.Sober" "$HOME/.local/share/sober" \
+                   "$HOME/.sober" -name '*.log' -path '*appData/logs*' 2>/dev/null | head -n 1)
+    fi
 fi
 
 if [ -z "$LOG" ]; then
-    echo "$LABEL no readable Sober client log found under the known roots:"
+    echo "$LABEL no Sober client log found under the known roots:"
     echo "$LABEL   ~/.var/app/org.vinegarhq.Sober/data/sober/appData/logs (flatpak)"
     echo "$LABEL   ~/.local/share/sober/appData/logs (standalone)"
-    echo "$LABEL the log is written per session — run this again right after the next close,"
+    echo "$LABEL the log is written per session — run this again right after the next close."
+    echo "$LABEL To see what your install calls it: ls -lt ~/.var/app/org.vinegarhq.Sober/data/sober/appData/logs/"
     echo "$LABEL or point me at the file: sober-doctor /path/to/log"
-    [ "$#" -ge 1 ] && [ -r "$1" ] && LOG="$1"
+    exit 0
 fi
-if [ -z "$LOG" ]; then exit 0; fi
 echo "$LABEL Sober client log: $LOG"
 
 # ---- 2. name the death ------------------------------------------------------
