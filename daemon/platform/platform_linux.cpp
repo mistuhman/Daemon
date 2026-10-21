@@ -405,6 +405,7 @@ Window          g_self = 0;           // our overlay window
 int             g_depth = 0;
 uint32_t        g_game_pid = 0;
 bool            g_click_through = false;
+int             g_input_rects = 0;    // >0: input shape = the menu's windows
 bool            g_hotkeys = false;
 bool            g_have_xfixes = false;
 void          (*g_toggle_cb)() = nullptr;
@@ -485,13 +486,6 @@ std::vector<Window> TopLevelWindows(Display* d, Window root)
         if (children) XFree(children);
     }
     return out;
-}
-
-bool WindowUsable(Display* d, Window w)
-{
-    XWindowAttributes wa{};
-    return XGetWindowAttributes(d, w, &wa) && wa.map_state == IsViewable &&
-           wa.width >= 2 && wa.height >= 2;
 }
 
 std::string WindowTitle(Display* d, Window w)
@@ -576,12 +570,37 @@ Window FindGameWindow(Display* d, Window root, uint32_t pid)
     const std::vector<Window> wins = TopLevelWindows(d, root);
     const Atom wm_pid = XInternAtom(d, "_NET_WM_PID", True);
 
+    // Candidates compete on AREA within a evidence tier, and a lower tier
+    // always beats a higher one. Two 011-receipt lessons live here: the
+    // follow target must never be a browser tab titled "Roblox" (the class
+    // gate below), and when Sober's launcher AND the Roblox client are both
+    // mapped the overlay must cover the CLIENT — the bigger window — not
+    // whichever was mapped first.
+    Window best = None;
+    long best_area = 0;
+    int  best_tier = 4;
+
+    // Client-sized only: a window smaller than 320x240 is a launcher chip or
+    // a splash, not the game (matches the caller's size gate).
+    auto consider = [&](Window w, int tier) {
+        if (tier > best_tier) return;
+        XWindowAttributes wa{};
+        if (!XGetWindowAttributes(d, w, &wa) || wa.map_state != IsViewable) return;
+        if (wa.width < 320 || wa.height < 240) return;
+        const long area = (long)wa.width * (long)wa.height;
+        if (tier < best_tier || area > best_area) {
+            best = w;
+            best_area = area;
+            best_tier = tier;
+        }
+    };
+
     // 1. The pid the memory attach stored (strongest: ELF-verified process).
     if (pid) {
         for (Window w : wins) {
             std::vector<unsigned long> v;
             if (ReadProp32(d, w, wm_pid, v) && !v.empty() && (uint32_t)v[0] == pid)
-                return w;
+                consider(w, 1);
         }
     }
 
@@ -597,25 +616,23 @@ Window FindGameWindow(Display* d, Window root, uint32_t pid)
         for (Window w : wins) {
             std::vector<unsigned long> v;
             if (ReadProp32(d, w, wm_pid, v) && !v.empty() && (uint32_t)v[0] == cp)
-                return w;
+                consider(w, 2);
         }
     }
 
-    // 3. Class-gated fallbacks. WM_CLASS must name sober/roblox — a browser
+    // 3. Class-gated fallback. WM_CLASS must name sober/roblox — a browser
     //    tab on the Roblox site has title "Roblox" but class
     //    "firefox"/"chromium"/... and must NOT match. That title-only
     //    follow is exactly the 011 receipt: the overlay sat over the
     //    website tab (1046x1159+7951+327, monitor 2) instead of the game.
     for (Window w : wins) {
-        if (!WindowUsable(d, w)) continue;
         if (!ClassIsGame(d, w)) continue;
-        if (TitleIsGame(WindowTitle(d, w))) return w;
+        if (TitleIsGame(WindowTitle(d, w))) consider(w, 3);
     }
     for (Window w : wins) {
-        if (!WindowUsable(d, w)) continue;
-        if (ClassIsGame(d, w)) return w;
+        if (ClassIsGame(d, w)) consider(w, 3);
     }
-    return None;
+    return best;
 }
 
 void* HotkeyThread(void*)
@@ -728,44 +745,83 @@ bool SetDockHints()
     return true;
 }
 
-bool SetClickThrough(bool enable)
+// Caller holds g_ctl_mutex. The input shape is EXACTLY the given window-local
+// rectangles — the menu's own windows. This is what makes "menu open"
+// compatible with "overlay over the game": every pixel outside those rects
+// (the entire transparent rest of the overlay) passes clicks through, so the
+// game keeps receiving input while the menu is on screen. n <= 0 is the empty
+// shape (menu closed).
+static bool SetInputRectsLocked(Display* d, const int* rects, int n)
 {
-    std::lock_guard<std::mutex> lk(g_ctl_mutex);
 #if defined(HAS_XFIXES)
-    Display* d = Ctl();
     if (!d || !g_self) return false;
     int evb = 0, errb = 0;
     if (!XFixesQueryExtension(d, &evb, &errb)) {
         g_click_through = false;
         return false;
     }
-    // XFixesSetWindowShapeRegion with an empty region makes the input shape
-    // empty (clicks fall through); a full-window region restores normal input.
-    // Shape kind 2 == ShapeInput from <X11/extensions/shape.h> (libXext); the
-    // numeric value is protocol-stable and avoids a header dependency on Xext
-    // for one constant.
-    const int kShapeInput = 2;
-    if (enable) {
-        XserverRegion empty = XFixesCreateRegion(d, nullptr, 0);
-        XFixesSetWindowShapeRegion(d, g_self, kShapeInput, 0, 0, empty);
-        XFixesDestroyRegion(d, empty);
-    } else {
-        XWindowAttributes wa{};
-        if (!XGetWindowAttributes(d, g_self, &wa)) return false;
-        XRectangle r{};
-        r.width = (unsigned short)wa.width;
-        r.height = (unsigned short)wa.height;
-        XserverRegion full = XFixesCreateRegion(d, &r, 1);
-        XFixesSetWindowShapeRegion(d, g_self, kShapeInput, 0, 0, full);
-        XFixesDestroyRegion(d, full);
+    if (n < 0) n = 0;
+    XRectangle xr[32];
+    if (n > 32) n = 32;                    // 1 menu column + open feature windows
+    XWindowAttributes wa{};
+    const bool have_wa = XGetWindowAttributes(d, g_self, &wa) != 0;
+    int used = 0;
+    for (int i = 0; i < n; ++i) {
+        int x = rects[i * 4 + 0], y = rects[i * 4 + 1];
+        int w = rects[i * 4 + 2], h = rects[i * 4 + 3];
+        if (w <= 0 || h <= 0) continue;
+        if (have_wa) {                      // clamp to the window, drop outsiders
+            if (x < 0) { w += x; x = 0; }
+            if (y < 0) { h += y; y = 0; }
+            if (x + w > (int)wa.width)  w = (int)wa.width - x;
+            if (y + h > (int)wa.height) h = (int)wa.height - y;
+            if (w <= 0 || h <= 0) continue;
+        }
+        xr[used].x = (short)x;
+        xr[used].y = (short)y;
+        xr[used].width = (unsigned short)w;
+        xr[used].height = (unsigned short)h;
+        ++used;
     }
+    // XFixesSetWindowShapeRegion with an empty region makes the input shape
+    // empty (clicks fall through); the menu rects restore input exactly
+    // there. Shape kind 2 == ShapeInput from <X11/extensions/shape.h>
+    // (libXext); the numeric value is protocol-stable and avoids a header
+    // dependency on Xext for one constant.
+    const int kShapeInput = 2;
+    XserverRegion reg = XFixesCreateRegion(d, xr, used);
+    XFixesSetWindowShapeRegion(d, g_self, kShapeInput, 0, 0, reg);
+    XFixesDestroyRegion(d, reg);
     XFlush(d);
-    g_click_through = enable;
+    g_click_through = (used == 0);
+    g_input_rects = used;
     return true;
 #else
-    (void)enable;
+    (void)rects;
+    (void)n;
+    g_click_through = false;
     return false;
 #endif
+}
+
+// enable=true  -> empty input shape; enable=false -> full-window input shape.
+// Both are special cases of SetInputRects (0 rects / 1 window-sized rect).
+bool SetClickThrough(bool enable)
+{
+    if (enable) return SetInputRects(nullptr, 0);
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d || !g_self) return false;
+    XWindowAttributes wa{};
+    if (!XGetWindowAttributes(d, g_self, &wa)) return false;
+    const int rects[4] = { 0, 0, (int)wa.width, (int)wa.height };
+    return SetInputRectsLocked(d, rects, 1);
+}
+
+bool SetInputRects(const int* rects, int n)
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    return SetInputRectsLocked(Ctl(), rects, n);
 }
 
 bool StartToggleHotkeys(void (*on_toggle)())
@@ -1029,7 +1085,8 @@ int ScreenDpi()
 const char* StatusLine()
 {
     std::lock_guard<std::mutex> lk(g_ctl_mutex);
-    if (!Ctl()) {
+    Display* d = Ctl();
+    if (!d) {
         snprintf(g_status, sizeof(g_status), "x11: no DISPLAY (headless or wayland-only)");
         return g_status;
     }
@@ -1054,14 +1111,14 @@ const char* StatusLine()
                  t.empty() ? "" : " | ", t.c_str());
     }
     snprintf(g_status, sizeof(g_status),
-             "x11: window=%s depth=%d xfixes=%d click-through=%s hotkeys=%s pid=%u follow=%s",
+             "x11: window=%s depth=%d xfixes=%d input=%s hotkeys=%s pid=%u follow=%s",
              g_self ? "found" : "not found", g_depth,
 #if defined(HAS_XFIXES)
              1,
 #else
              0,
 #endif
-             g_click_through ? "on" : "off",
+             g_click_through ? "thru" : (g_input_rects > 0 ? "menu" : "full"),
              g_hotkeys ? "on" : "off",
              g_game_pid,
              follow);
@@ -1078,6 +1135,7 @@ void SetGamePid(uint32_t) {}
 bool AttachSelf(const char*) { return false; }
 bool SetDockHints() { return false; }
 bool SetClickThrough(bool) { return false; }
+bool SetInputRects(const int*, int) { return false; }
 bool StartToggleHotkeys(void (*)()) { return false; }
 int WindowDepth() { return 0; }
 bool ArgbVisualAvailable() { return false; }

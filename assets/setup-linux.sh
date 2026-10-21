@@ -104,6 +104,7 @@ fi
 timeout 2 "$ROOT/build/daemon" 2>&1 | head -n 30 || true
 timeout 3 "$ROOT/build/daemon-boot" --console --exit-after 2 2>&1 | head -n 20 || true
 echo "[setup] overlay log after Load will be: $ROOT/overlay.log  (or /tmp/daemon-overlay.log if that is not writable)"
+echo "[setup] overlay follows only Sober/Roblox-class windows (a browser tab titled Roblox is ignored); it starts click-through — HOME/F8 opens the menu, and even then only the menu itself takes input"
 echo "[setup] previous iterations (daemon-009, daemon-010, ...) were checked for cleanup above — look for '[cleanup] removed' lines"
 echo "RUN: $ROOT/build/daemon-boot   (the manager — click Load once Sober is up)"
 echo "     or ~/.local/bin/daemon-boot (ulauncher: type 'daemon')"

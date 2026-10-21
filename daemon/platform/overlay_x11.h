@@ -45,6 +45,14 @@ bool SetDockHints();
 // Needs HAS_XFIXES; returns false and StatusLine() says so otherwise.
 bool SetClickThrough(bool enable);
 
+// The precise form of the same idea: the input shape becomes EXACTLY the given
+// window-local rectangles (the menu's own windows — main column plus the open
+// feature windows), so while the menu is open, clicks on every other pixel of
+// the overlay (all the transparent area over the game) still fall through.
+// rects is n quads x,y,w,h; n <= 0 means the empty shape (click-through).
+// Coordinates are clamped to the window. Needs HAS_XFIXES.
+bool SetInputRects(const int* rects, int n);
+
 // Passive grab of HOME + F8 on the root window (AnyModifier). Each press calls
 // on_toggle() from the hotkey thread — keep the callback trivial (set a flag).
 // Idempotent; returns false when not built with X11.
@@ -73,9 +81,12 @@ uint64_t ArgbVisualId();
 // Returns false when there is no display/window to manage.
 bool EnsureAboveGame();
 
-// The game window's rect in screen coordinates. Prefers the window whose
-// _NET_WM_PID is the pid passed to platform::SetGamePid(); falls back to any
-// viewable top-level whose title contains "roblox" or "sober".
+// The game window's rect in screen coordinates. Candidates come from (1) the
+// window whose _NET_WM_PID is the pid passed to platform::SetGamePid(), then
+// (2) any Sober-named process's window, then (3) WM_CLASS-gated windows —
+// never title alone, so a browser tab titled "Roblox" cannot match. When more
+// than one candidate is mapped (Sober's launcher AND the Roblox client), the
+// LARGEST viewable window wins: the client, not the launcher.
 bool GameWindowRect(int& x, int& y, int& w, int& h);
 
 // Which window currently has _NET_ACTIVE_STATE focus: 'g'ame, 'u's (our

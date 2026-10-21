@@ -9,9 +9,11 @@
 //
 //    * transparent: a 32-bit ARGB visual (SDL_GL_ALPHA_SIZE 8 + compositor)
 //      with a zero-alpha clear, so only ESP/menu pixels exist;
-//    * click-through: XFixes empty input shape while the menu is closed —
-//      clicks land in the game below. HOME/F8 are root-grabbed (x11overlay)
-//      so the menu can be reopened without focus;
+//    * click-through: XFixes input shape — empty while the menu is closed,
+//      exactly the menu's windows while it is open (the transparent rest of
+//      the overlay never takes input); clicks land in the game below.
+//      HOME/F8 are root-grabbed (x11overlay) so the menu can be reopened
+//      without focus;
 //    * game-rect: borderless always-on-top sized to the game window
 //      (platform::GameClientRect, EWMH) or the full display before that.
 //
@@ -40,6 +42,7 @@
 #include "media_tracker.h"
 
 #include <atomic>
+#include <cstring>
 
 #include "platform/overlay_x11.h"
 
@@ -91,6 +94,17 @@ static std::atomic<bool> s_toggle_requested{false};
 static int          s_geom_x = 0, s_geom_y = 0, s_geom_w = 0, s_geom_h = 0;
 static bool         s_geom_valid = false;
 
+// Input scope (012): the overlay's input shape is not all-or-nothing anymore.
+// render_ui() reports the menu's own windows (main column + open feature
+// windows) in s_menu_rects each menu frame; the loop issues them as the XFixes
+// input region, so clicks on every OTHER pixel of the overlay — the whole
+// transparent area over the game — pass through even while the menu is open.
+enum { kMaxInputRects = 32 };
+static int          s_menu_rects[kMaxInputRects][4];   // window-local, from ImGui
+static int          s_menu_rect_count = 0;             // 0 = none reported (yet)
+static int          s_input_last[kMaxInputRects][4] = {{0}};
+static int          s_input_last_n = -1;               // last issued shape, -1 none
+
 // Hotkey thread target — must stay trivial (no locks, no Xlib).
 static void RequestMenuToggle() { s_toggle_requested.store(true, std::memory_order_relaxed); }
 #endif
@@ -110,11 +124,17 @@ const char* OverlayStatus()
                  extra[0] ? " — " : "", extra, x11overlay::StatusLine());
         return buf;
     }
-    snprintf(buf, sizeof(buf), "%s%s overlay %dx%d+%d+%d — click-through %s — %s",
+    char input[48];
+    if (s_click_through) snprintf(input, sizeof(input), "thru (menu closed)");
+    else if (s_input_last_n > 0)
+        snprintf(input, sizeof(input), "menu-only (%d window%s)", s_input_last_n,
+                 s_input_last_n == 1 ? "" : "s");
+    else snprintf(input, sizeof(input), "full (menu open)");
+    snprintf(buf, sizeof(buf), "%s%s overlay %dx%d+%d+%d — input %s — %s",
              extra[0] ? extra : "free ",
              s_per_pixel ? "transparent" : "opaque",
              s_geom_w, s_geom_h, s_geom_x, s_geom_y,
-             s_click_through ? "on (menu closed)" : "off (menu open)",
+             input,
              x11overlay::StatusLine());
     return buf;
 #else
@@ -194,6 +214,26 @@ void render_ui() {
 
     if (g_state.menu_open) {
         ::RenderMenu();
+        // Report the menu's own windows for the input shape: the main column
+        // plus the open feature windows (rects published by the UI itself).
+        // The fps/media float plates are deliberately NOT taken — they are
+        // read-only, and a click on them should reach the game below.
+        s_menu_rect_count = 0;
+        ImVec2 mpos, msize;
+        menuui::LastRect(&mpos, &msize);
+        auto take = [&](const ImVec2& p, const ImVec2& sz) {
+            if (s_menu_rect_count >= kMaxInputRects || sz.x < 2.0f || sz.y < 2.0f) return;
+            s_menu_rects[s_menu_rect_count][0] = (int)p.x;
+            s_menu_rects[s_menu_rect_count][1] = (int)p.y;
+            s_menu_rects[s_menu_rect_count][2] = (int)(p.x + sz.x) - (int)p.x;
+            s_menu_rects[s_menu_rect_count][3] = (int)(p.y + sz.y) - (int)p.y;
+            ++s_menu_rect_count;
+        };
+        take(mpos, msize);
+        for (int i = 0; i < menuui::FeatureCount() && s_menu_rect_count < kMaxInputRects; ++i)
+            if (menuui::FeatureRect(i, &mpos, &msize)) take(mpos, msize);
+    } else {
+        s_menu_rect_count = 0;
     }
 #else
     g_overlay_busy.store(esp_enabled || aimbot_enabled || show_waypoints || skeleton_esp || chinahat || aimviewer || chams_enabled || mesh_chams || headdot_enabled || oof_enabled || inventory_checker_enabled || show_now_playing || night_enabled || fullbright_enabled || world_ambient_enabled, std::memory_order_relaxed);
@@ -447,10 +487,17 @@ static bool TryCreateWindow() {
         FailHeadless("window visual is not 32-bit ARGB after forcing the visual id");
         return false;
     }
-    x11overlay::SetClickThrough(false);   // menu open: input on
-    s_click_through = false;
-    LogLine("Daemon: transparent overlay active — %dx%d+%d+%d, ARGB depth 32, XFixes click-through armed",
-            s_geom_w, s_geom_h, s_geom_x, s_geom_y);
+    // Initial input shape: menu closed (the --locked default) means
+    // click-through from the very first moment — no input sink, no focus
+    // steal when the overlay appears over the game. Menu open: full window
+    // until the first frame reports the menu's own rects, which the loop
+    // then narrows the shape to.
+    s_click_through = !g_state.menu_open;
+    if (!x11overlay::SetClickThrough(s_click_through)) s_click_through = false;
+    s_input_last_n = -1;   // nothing issued through the rect path yet
+    LogLine("Daemon: transparent overlay active — %dx%d+%d+%d, ARGB depth 32, XFixes click-through armed%s",
+            s_geom_w, s_geom_h, s_geom_x, s_geom_y,
+            g_state.menu_open ? "" : " (menu closed: click-through on)");
     return true;
 }
 
@@ -464,8 +511,13 @@ static void ShutdownImGui() {
 
 void run() {
 #ifdef HAS_SDL_OVERLAY
+    // --locked (the bootstrapper contract): the overlay comes up over the
+    // game ALREADY click-through — no input sink over the game at launch and
+    // no focus steal from it. HOME/F8 opens the menu (whose windows are then
+    // the only interactive pixels). A standalone launch keeps the menu up.
+    if (g_locked_to_sober) g_state.menu_open = false;
     if (TryCreateWindow()) {
-        LogLine("Daemon: SDL2+GL ImGui shell active — HOME/F8 toggles the menu (and its click-through)");
+        LogLine("Daemon: SDL2+GL ImGui shell active — HOME/F8 toggles the menu (input = the menu's windows only)");
         if (s_overlay_mode) LogLine("Daemon: %s", OverlayStatus());
 
         bool done = false;
@@ -548,16 +600,40 @@ void run() {
             }
 
             if (s_overlay_mode) {
-                // Input shape follows the menu: open = interactive window,
-                // closed = empty XFixes input shape, clicks fall to the game.
-                const bool want_ct = !g_state.menu_open;
-                if (want_ct != s_click_through) {
-                    if (x11overlay::SetClickThrough(want_ct)) {
-                        s_click_through = want_ct;
-                        LogLine("Daemon: click-through %s",
-                                want_ct ? "on (menu closed) — clicks pass to the game"
-                                        : "off (menu open) — the overlay takes input");
+                // Input shape follows the menu: closed = empty shape (clicks
+                // pass to the game); open = EXACTLY the menu's windows, so
+                // the whole transparent rest of the overlay stays
+                // click-through — the 011 receipt's "no click through"
+                // (clicks landed on the overlay and dragged things) fixed.
+                int rects[kMaxInputRects][4];
+                int n = 0;
+                if (g_state.menu_open) {
+                    if (s_menu_rect_count > 0) {
+                        n = s_menu_rect_count > kMaxInputRects ? kMaxInputRects
+                                                               : s_menu_rect_count;
+                        for (int i = 0; i < n; ++i)
+                            for (int k = 0; k < 4; ++k) rects[i][k] = s_menu_rects[i][k];
+                    } else {
+                        // Menu open but no frame has reported rects yet:
+                        // whole window until the next frame narrows it.
+                        rects[0][0] = 0; rects[0][1] = 0;
+                        rects[0][2] = s_geom_w; rects[0][3] = s_geom_h;
+                        n = 1;
                     }
+                }
+                const bool changed =
+                    n != s_input_last_n ||
+                    (n > 0 && memcmp(rects, s_input_last, sizeof(int) * 4 * (size_t)n) != 0);
+                if (changed && x11overlay::SetInputRects(&rects[0][0], n)) {
+                    const bool was_thru = s_click_through;
+                    s_click_through = (n == 0);
+                    if (n > 0) memcpy(s_input_last, rects, sizeof(int) * 4 * (size_t)n);
+                    s_input_last_n = n;
+                    if (was_thru && n > 0)
+                        LogLine("Daemon: click-through off (menu open) — input = the menu's %d window%s only",
+                                n, n == 1 ? "" : "s");
+                    else if (!was_thru && n == 0)
+                        LogLine("Daemon: click-through on (menu closed) — clicks pass to the game");
                 }
             }
 
