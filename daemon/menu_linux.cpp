@@ -250,7 +250,9 @@ void FillSnapshot() {
     s.user[0] = '\0';
     if (lp.name[0]) snprintf(s.user, sizeof(s.user), "%s", lp.name);
     s.pid = (unsigned)mem::process_id.load();
-    snprintf(s.os, sizeof(s.os), "%s", OSName());
+    // %.47s: bounded read AND bounded write — OSName()'s buffer is 64, the
+    // rail card's field is 48; the plain "%s" was the build's one warning.
+    snprintf(s.os, sizeof(s.os), "%.47s", OSName());
 
     // The two things a Linux report needs first: what the hook side (PID
     // finder + dynamic offsets) resolved, and what the overlay side (game

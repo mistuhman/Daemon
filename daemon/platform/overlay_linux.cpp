@@ -591,6 +591,7 @@ void run() {
                 // text fields work. FocusGameWindow() hands it back when the
                 // menu closes.
                 SDL_SetWindowInputFocus(s_window);
+                LogLine("Daemon: menu takes keyboard focus (click inside menu) — held until the menu closes");
             }
         };
 
@@ -605,7 +606,9 @@ void run() {
                 if (!g_state.menu_open && s_overlay_mode) {
                     // Menu closed: hand keyboard focus back to the game (we
                     // only hold it after a click inside the menu).
-                    x11overlay::FocusGameWindow();
+                    const bool ok = x11overlay::FocusGameWindow();
+                    LogLine("Daemon: menu closed — keyboard focus handed back to the game window (%s)",
+                            ok ? "ok" : "game window not found");
                 }
             }
             // render_ui() publishes this, but the idle gate means no frame runs

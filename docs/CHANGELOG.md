@@ -7,6 +7,42 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     PAYLOAD 015 — THE LOG SPOKE: IT WAS NEVER A CRASH. The operator's
+         Sober client log (rblxlog.txt) ends in a CLEAN Android teardown —
+         nativeAppBridgeV2LeaveGame → pause destroyView:true → stop →
+         destroyLuaApp → setStage: None — with the session healthy until the
+         instant of death: averageFPS=139, Vulkan 1.4, qualityLevel 21, 20
+         cores, 31GB RAM, zero RBXCRASH lines, no freeze, no timeout. That
+         tail is what an EXTERNAL close request looks like from inside the
+         client; a graphics crash never writes it. The operator identified
+         the requester: Fleasion 2.4.1, their asset-interception proxy,
+         "connecting at the same time" — whose README documents that "Clear
+         Cache on Launch" (ON by default) TERMINATES a running Roblox when
+         the proxy starts, with a Linux bootstrap delay (16.9s join→death
+         here). 86 TLS-verification failures against roblox.com endpoints
+         are the same proxy's MITM fingerprints, and the broken avatar
+         thumbnails ride along. The 64MB gpu_memMB telemetry is the known
+         Sober VRAM-reporting clamp (#2208/#2165) — a red herring at 139fps.
+         Daemon's focus profile is cleared by code audit: the overlay takes
+         keyboard focus ONLY on an explicit click inside the open menu
+         (logged now), hands it straight back on close (logged now), and in
+         the default attached state never touches focus at all; hotkeys come
+         through a root grab, not a focus change; the bootstrapper is pure
+         /proc reads. The manual forensics are now a shipped command for
+         every operator: assets/sober-doctor.sh (installed as
+         ~/.local/bin/sober-doctor) — discovers the client log for ANY
+         install style (flatpak ~/.var/app, standalone ~/.local/share,
+         legacy ~/.sober, plus a bounded find), classifies the death
+         (RBXCRASH + documented OOM FFlag fix vs clean external teardown
+         vs intercepting-proxy fingerprints vs the 64MB clamp quirk), and
+         prints the session's fps/join telemetry so "was it even unhealthy"
+         is answered in the same breath. Also: the build's one warning is
+         dead (menu rail os field copies OSName() with %.47s — bounded read
+         AND write, matching the codebase's house style). Compile-proven:
+         platform_linux x3 shapes, overlay_linux x2, menu_linux — clean;
+         all three scripts sh -n clean; sober-doctor verified against the
+         operator's real log (all five verdicts fire).
+```
 HEAD     PAYLOAD 014 — NAME THE CRASH, DON'T GUESS IT. The 013 receipt: the
          overlay is now sticky over the game ("never leaves sober"), clicks
          pass through, the standalone run draws the menu and plates over

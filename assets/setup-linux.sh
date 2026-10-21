@@ -81,24 +81,13 @@ if command -v lspci >/dev/null 2>&1; then
     lspci 2>/dev/null | grep -i -E "vga|3d controller" | head -n 2 | sed 's/^/[doctor] gpu: /'
 fi
 # ---- Sober's own crash log: the client names its death ----------------------
-# "sober crashes whenever daemon is loaded" needs the RBXCRASH line, not a
-# guess. Log path per VinegarHQ's documentation (Troubleshooting Sober); the
-# client's error screen quotes the same reason. OOM => the documented FFlag
-# fix is printed verbatim (DFIntTextureQualityOverride), because our overlay
-# is a second GL context + fullscreen window on the same GPU and a client
-# already at its VRAM ceiling tips over exactly when it appears.
-SOBER_LOG="$HOME/.var/app/org.vinegarhq.Sober/data/sober/appData/logs/latest.log"
-if [ -r "$SOBER_LOG" ]; then
-    echo "[doctor] Sober client log: $SOBER_LOG — last crash lines:"
-    grep -a "RBXCRASH" "$SOBER_LOG" | tail -n 3 | sed 's/^/[doctor]   /'
-    if grep -aq "OutOfMemory" "$SOBER_LOG"; then
-        echo "[doctor] Sober hit RBXCRASH OutOfMemory — documented fix (VinegarHQ troubleshooting):"
-        echo "[doctor]   in ~/.var/app/org.vinegarhq.Sober/config/sober/config.json, \"fflags\" section, add:"
-        echo "[doctor]     \"DFIntTextureQualityOverride\": 2, \"DFFlagTextureQualityOverrideEnabled\": true"
-        echo "[doctor]   (use 1 instead of 2 if 2 still crashes; NVIDIA without spillover needs it most)"
-    fi
-else
-    echo "[doctor] no readable Sober client log at:" "$SOBER_LOG"
+# "sober crashes whenever daemon is loaded" needs the log, not a guess. The
+# full forensics (log discovery for ANY install style + death classification:
+# RBXCRASH vs clean external teardown vs intercepting-proxy fingerprints) lives
+# in sober-doctor.sh and is re-runnable ANYTIME as ~/.local/bin/sober-doctor —
+# the file appears per session, so run it right after the next close.
+if [ -f "$ROOT/assets/sober-doctor.sh" ]; then
+    sh "$ROOT/assets/sober-doctor.sh"
 fi
 if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
     Y=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo "?")
