@@ -511,21 +511,109 @@ bool TitleIsGame(const std::string& t)
            l.find("sober") != std::string::npos;
 }
 
+bool ClassIsGame(Display* d, Window w)
+{
+    Atom wm_class = XInternAtom(d, "WM_CLASS", True);
+    std::string cls = ReadPropString(d, w, wm_class);
+    if (cls.empty()) return false;
+    std::string l;
+    l.reserve(cls.size());
+    for (char c : cls) {
+        if (c == '\0') l.push_back(' ');
+        else l.push_back((char)tolower((unsigned char)c));
+    }
+    return l.find("sober") != std::string::npos ||
+           l.find("roblox") != std::string::npos;
+}
+
+// Cheap Sober process guess for window-follow: same-uid /proc entries whose
+// exe or argv0 name contains "sober" (the flatpak binary path is
+// .../org.vinegarhq.Sober/.../bin/sober). This is NOT the memory-attach scan
+// (sober_scanner.cpp stays ELF-verified, no name scoring) — it only decides
+// which window the overlay geometry follows, never where memory is read.
+// Cached for 2 s: FindGameWindow runs at ~10 Hz from the follow tick.
+std::vector<uint32_t> SoberPidCandidates()
+{
+    std::vector<uint32_t> out;
+    DIR* dir = opendir("/proc");
+    if (!dir) return out;
+    const uid_t uid = getuid();
+    while (auto* e = readdir(dir)) {
+        char* end = nullptr;
+        const unsigned long v = strtoul(e->d_name, &end, 10);
+        if (*end || !v || v > UINT32_MAX) continue;
+        char path[72];
+        snprintf(path, sizeof(path), "/proc/%lu", v);
+        struct stat st{};
+        if (stat(path, &st) || st.st_uid != uid) continue;
+        std::string id;
+        snprintf(path, sizeof(path), "/proc/%lu/exe", v);
+        char exe[512];
+        const ssize_t n = readlink(path, exe, sizeof(exe) - 1);
+        if (n > 0) { exe[n] = 0; id.assign(exe, (size_t)n); }
+        else {
+            snprintf(path, sizeof(path), "/proc/%lu/cmdline", v);
+            if (FILE* f = fopen(path, "rb")) {
+                char buf[512];
+                const size_t m = fread(buf, 1, sizeof(buf) - 1, f);
+                fclose(f);
+                if (m > 0) { buf[m] = 0; id.assign(buf, strnlen(buf, m)); }
+            }
+        }
+        if (id.empty()) continue;
+        std::string l;
+        l.reserve(id.size());
+        for (char c : id) l.push_back((char)tolower((unsigned char)c));
+        if (l.find("sober") != std::string::npos) out.push_back((uint32_t)v);
+    }
+    closedir(dir);
+    return out;
+}
+
 // Caller holds g_ctl_mutex.
 Window FindGameWindow(Display* d, Window root, uint32_t pid)
 {
     const std::vector<Window> wins = TopLevelWindows(d, root);
+    const Atom wm_pid = XInternAtom(d, "_NET_WM_PID", True);
+
+    // 1. The pid the memory attach stored (strongest: ELF-verified process).
     if (pid) {
-        Atom wm_pid = XInternAtom(d, "_NET_WM_PID", True);
         for (Window w : wins) {
             std::vector<unsigned long> v;
             if (ReadProp32(d, w, wm_pid, v) && !v.empty() && (uint32_t)v[0] == pid)
                 return w;
         }
     }
+
+    // 2. Cheap Sober pid guess via _NET_WM_PID — window-follow must work even
+    //    while the memory scan has not landed (011 receipt: the overlay ran
+    //    with pid=0 the whole time).
+    static std::vector<uint32_t> guess;
+    static uint64_t guess_at = 0;
+    const uint64_t now = NowMonoMs();
+    if (now - guess_at > 2000) { guess = SoberPidCandidates(); guess_at = now; }
+    for (uint32_t cp : guess) {
+        if (pid && cp == pid) continue;
+        for (Window w : wins) {
+            std::vector<unsigned long> v;
+            if (ReadProp32(d, w, wm_pid, v) && !v.empty() && (uint32_t)v[0] == cp)
+                return w;
+        }
+    }
+
+    // 3. Class-gated fallbacks. WM_CLASS must name sober/roblox — a browser
+    //    tab on the Roblox site has title "Roblox" but class
+    //    "firefox"/"chromium"/... and must NOT match. That title-only
+    //    follow is exactly the 011 receipt: the overlay sat over the
+    //    website tab (1046x1159+7951+327, monitor 2) instead of the game.
     for (Window w : wins) {
         if (!WindowUsable(d, w)) continue;
+        if (!ClassIsGame(d, w)) continue;
         if (TitleIsGame(WindowTitle(d, w))) return w;
+    }
+    for (Window w : wins) {
+        if (!WindowUsable(d, w)) continue;
+        if (ClassIsGame(d, w)) return w;
     }
     return None;
 }
@@ -900,8 +988,16 @@ char ActiveWindowKind()
         std::vector<unsigned long> pv;
         if (ReadProp32(d, aw, wm_pid, pv) && !pv.empty() && (uint32_t)pv[0] == g_game_pid)
             return 'g';
+        // PID known but foreground's _NET_WM_PID not matching — class-gated
+        // title prevents a browser on the Roblox site (TitleIsGame true,
+        // ClassIsGame false) from being mistaken for the game.
+        if (ClassIsGame(d, aw) && TitleIsGame(WindowTitle(d, aw))) return 'g';
+        if (ClassIsGame(d, aw)) return 'g';
+        return 'o';
     }
-    return TitleIsGame(WindowTitle(d, aw)) ? 'g' : 'o';
+    // No PID yet — do not guess from title alone (see FindGameWindow).
+    if (ClassIsGame(d, aw)) return 'g';
+    return 'o';
 }
 
 bool CursorScreen(int& x, int& y)
@@ -937,8 +1033,28 @@ const char* StatusLine()
         snprintf(g_status, sizeof(g_status), "x11: no DISPLAY (headless or wayland-only)");
         return g_status;
     }
+    // What the geometry is following right now — the 011 receipt's
+    // "overlay isnt on roblox" was invisible because this line only said
+    // window=found. Now it names the followed window's class (and title when
+    // it fits): follow=org.vinegarhq.Sober vs follow=firefox says it all.
+    char follow[128] = "none";
+    const Window root = DefaultRootWindow(d);
+    const Window gw = FindGameWindow(d, root, g_game_pid);
+    if (gw != None) {
+        std::string cls = ReadPropString(d, gw, XInternAtom(d, "WM_CLASS", True));
+        std::string t = WindowTitle(d, gw);
+        if (t.size() > 48) t = t.substr(0, 48);
+        for (char& c : t)
+            if ((unsigned char)c < 32 || (unsigned char)c > 126) c = ' ';
+        for (char& c : cls)
+            if ((unsigned char)c < 32 || (unsigned char)c > 126) c = ' ';
+        const size_t nul = cls.find('\0');
+        if (nul != std::string::npos) cls = cls.substr(0, nul);
+        snprintf(follow, sizeof(follow), "%s%s%s", cls.c_str(),
+                 t.empty() ? "" : " | ", t.c_str());
+    }
     snprintf(g_status, sizeof(g_status),
-             "x11: window=%s depth=%d xfixes=%d click-through=%s hotkeys=%s pid=%u",
+             "x11: window=%s depth=%d xfixes=%d click-through=%s hotkeys=%s pid=%u follow=%s",
              g_self ? "found" : "not found", g_depth,
 #if defined(HAS_XFIXES)
              1,
@@ -947,7 +1063,8 @@ const char* StatusLine()
 #endif
              g_click_through ? "on" : "off",
              g_hotkeys ? "on" : "off",
-             g_game_pid);
+             g_game_pid,
+             follow);
     return g_status;
 }
 

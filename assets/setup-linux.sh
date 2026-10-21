@@ -1,5 +1,5 @@
 #!/bin/sh
-# Daemon Void setup — current testing iteration ti-11
+# Daemon Void setup — current testing iteration ti-13
 #
 # The 004 build failed with make's Error 2 hidden by `| tail -n 20`: the real
 # compiler error scrolled out of the photographed output. This version keeps
@@ -82,16 +82,29 @@ if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
     fi
 fi
 
+printf '%s\n' "ti-13" > "$ROOT/.daemon-iteration"
+echo "[setup] marked current iteration ti-13 ($ROOT/.daemon-iteration)"
+
 echo "[setup] install desktop entry: sh $ROOT/assets/install.sh"
 if sh "$ROOT/assets/install.sh" 2>&1 | tail -n 10; then
-    printf '%s\n' "ti-11" > "$ROOT/.daemon-iteration"
-    sh "$ROOT/assets/cleanup-previous-iterations.sh"
+    echo "[setup] desktop entry installed"
 else
-    echo "[setup] WARN: desktop install failed; preserving previous iterations"
+    echo "[setup] WARN: desktop install failed (continuing — build is still usable)"
+fi
+
+# Cleanup previous iterations regardless of desktop install outcome — only
+# requires a successful build + marker (the build half is already proven by
+# BUILD_DONE=YES above). This is what removes daemon-009/010 after ti-13.
+if sh "$ROOT/assets/cleanup-previous-iterations.sh" 2>&1; then
+    echo "[setup] cleanup checked"
+else
+    echo "[setup] WARN: cleanup script failed (preserving previous iterations)"
 fi
 # Headless smoke tests: two seconds of startup logs prove the binaries run.
 timeout 2 "$ROOT/build/daemon" 2>&1 | head -n 30 || true
 timeout 3 "$ROOT/build/daemon-boot" --console --exit-after 2 2>&1 | head -n 20 || true
+echo "[setup] overlay log after Load will be: $ROOT/overlay.log  (or /tmp/daemon-overlay.log if that is not writable)"
+echo "[setup] previous iterations (daemon-009, daemon-010, ...) were checked for cleanup above — look for '[cleanup] removed' lines"
 echo "RUN: $ROOT/build/daemon-boot   (the manager — click Load once Sober is up)"
 echo "     or ~/.local/bin/daemon-boot (ulauncher: type 'daemon')"
 echo "     terminal/no-GUI fallback: $ROOT/build/daemon-boot --console"

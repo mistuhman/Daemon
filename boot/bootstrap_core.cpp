@@ -45,6 +45,23 @@ std::string OverlayPath()
     return platform::ExeDir() + "daemon";
 }
 
+std::string OverlayLogPath()
+{
+    std::string exeDir = platform::ExeDir();
+    // When running from an extracted payload's build/ (e.g. ~/daemon-010/build/),
+    // the log beside the exe would be hidden inside build/. Put it at the
+    // extraction root instead (~/daemon-010/overlay.log) — the file-manager
+    // view the operator photographed (7 items at the root). Installed
+    // ~/.local/bin/daemon-boot keeps its log beside the binary.
+    const std::string suffix = "build/";
+    if (exeDir.size() >= suffix.size() &&
+        exeDir.compare(exeDir.size() - suffix.size(), suffix.size(), suffix) == 0) {
+        const std::string root = exeDir.substr(0, exeDir.size() - suffix.size());
+        return root + "overlay.log";
+    }
+    return exeDir + "overlay.log";
+}
+
 } // namespace
 
 const char* ExeDir()
@@ -153,6 +170,8 @@ bool StartOverlay(char* err, std::size_t errlen)
         if (err && errlen) snprintf(err, errlen, "no overlay binary at %s", exe.c_str());
         return false;
     }
+    // Resolve log path before fork so parent can report it even if child fails
+    const std::string log = OverlayLogPath();
     const pid_t pid = fork();
     if (pid < 0) {
         if (err && errlen) snprintf(err, errlen, "fork failed (errno %d)", errno);
@@ -163,22 +182,38 @@ bool StartOverlay(char* err, std::size_t errlen)
         // there, geometry following it. Its own process group so our Ctrl-C
         // does not race it; it exits on SIGTERM with its restore path.
         setsid();
-        // Capture stdout/stderr to overlay.log beside the exe. At baseline-009
-        // a crash left no trace because the manager kept no pipe for us — the
-        // log is where the next "what died" answers itself.
-        const std::string log = platform::ExeDir() + "overlay.log";
-        const int fd = open(log.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        // Capture stdout/stderr to overlay.log. At baseline-009 a crash left no
+        // trace because the manager kept no pipe — the log is where the next
+        // "what died" answers itself. ti-10 hid the file inside build/ (7 items
+        // at the extraction root, log invisible); the path now points at the
+        // extraction root when running from build/, otherwise beside the exe.
+        // Fallback to /tmp if the primary location is not writable.
+        std::string chosen = log;
+        int fd = open(chosen.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            const char* fallback = "/tmp/daemon-overlay.log";
+            fd = open(fallback, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd >= 0) chosen = fallback;
+        }
         if (fd >= 0) {
+            dprintf(fd, "[overlay.log] Daemon %s — writing overlay stdout/stderr here (overlay pid will log next)\n",
+                    chosen.c_str());
             dup2(fd, STDOUT_FILENO);
             dup2(fd, STDERR_FILENO);
             if (fd > STDERR_FILENO) close(fd);
         }
         const char* argv[] = { "daemon", "--locked", nullptr };
         execv(exe.c_str(), (char* const*)argv);
+        dprintf(STDERR_FILENO, "overlay exec failed for %s: errno %d\n", exe.c_str(), errno);
         _exit(127);
     }
     g_overlay_pid = pid;
     return true;
+}
+
+std::string OverlayLogPathForUi()
+{
+    return OverlayLogPath();
 }
 
 bool StopOverlay()
