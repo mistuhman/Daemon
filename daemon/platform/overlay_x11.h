@@ -36,6 +36,12 @@ bool Available();
 // before SetDockHints / SetClickThrough / WindowDepth.
 bool AttachSelf(const char* wm_class);
 
+// Attach by exact X11 window id — the honest path for an override-redirect
+// overlay: the WM never manages OR windows, so they never appear in
+// _NET_CLIENT_LIST and a WM_CLASS scan over that list cannot find them.
+// The id comes straight from SDL_GetWindowWMInfo; no scanning, no guessing.
+bool AttachWindow(unsigned long xid);
+
 // _NET_WM_STATE_ABOVE + SKIP_TASKBAR + SKIP_PAGER + window type UTILITY,
 // via the EWMH client-message path (the window is already mapped).
 bool SetDockHints();
@@ -74,12 +80,20 @@ bool ArgbVisualAvailable();
 // alpha-8 GLX request alone still produced depth-24 windows in the field.
 uint64_t ArgbVisualId();
 
-// Re-assert being above the game window: compare our position against the game
-// in _NET_CLIENT_LIST_STACKING (bottom-to-top); when we are below it, send the
-// _NET_WM_STATE_ABOVE client message again and XRaiseWindow. Called from the
-// follow tick so a focus-stealing WM cannot leave the menu under the game.
-// Returns false when there is no display/window to manage.
+// Re-assert being above the game window. The check reads the REAL stacking
+// order (XQueryTree children are listed bottom-to-top) — not
+// _NET_CLIENT_LIST_STACKING, which only knows WM-managed windows and is
+// blind to our override-redirect overlay. When the game is above us we
+// XRaiseWindow ourselves: for an OR window the WM cannot veto or re-layer
+// that (the 012 receipt: a managed ABOVE window lost to the focused
+// fullscreen game every time). Called from the follow tick; returns true
+// when we are above the game (or no game window exists).
 bool EnsureAboveGame();
+
+// Hand keyboard focus to the game window (used when our menu closes and we
+// held focus for text input). Fails softly — focus is a courtesy, not a
+// contract.
+bool FocusGameWindow();
 
 // The game window's rect in screen coordinates. Candidates come from (1) the
 // window whose _NET_WM_PID is the pid passed to platform::SetGamePid(), then

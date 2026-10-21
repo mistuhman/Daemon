@@ -674,8 +674,16 @@ namespace cache {
             // Same idle backoff as the feature loop: all three fetches return
             // empty until a game is attached, so 62.5 Hz wakeups buy nothing
             // pre-attach and only burn the CPU. Attached cadence (16 ms) is
-            // unchanged.
-            platform::SleepMs(g_base_address ? 16 : 100);
+            // unchanged — but only while something CONSUMES the cache: with
+            // the menu closed and every memory feature off, the walk still
+            // read the whole instance tree 60x/s and cost the game real
+            // frames (the 013 receipt: "<4 fps... 20 fps is not more
+            // playable"). Idle attached cadence is 250 ms — plenty for the
+            // menu's status rows the moment it opens, free otherwise.
+            const bool consumers =
+                g_menu_open.load(std::memory_order_relaxed) ||
+                g_overlay_busy.load(std::memory_order_relaxed);
+            platform::SleepMs(g_base_address ? (consumers ? 16 : 250) : 100);
         }
     }
 

@@ -212,8 +212,10 @@ void FillPlayers(menuui::Snapshot& s, const cache::LocalPlayerData& lp)
         menuui::Snapshot::PlayerRow& r = s.players[s.player_count];
 
         const char* nm = e.display_name[0] ? e.display_name : e.name;
-        snprintf(r.name, sizeof(r.name), "%s", (nm && nm[0]) ? nm : "unknown");
-        snprintf(r.account, sizeof(r.account), "%s", e.name[0] ? e.name : r.name);
+        // %.31s: bounded read AND bounded write — e.name is char[64], the row
+        // fields are char[32]; the plain "%s" was the build's one warning.
+        snprintf(r.name, sizeof(r.name), "%.31s", (nm && nm[0]) ? nm : "unknown");
+        snprintf(r.account, sizeof(r.account), "%.31s", e.name[0] ? e.name : r.name);
         r.user_id = e.user_id;
         r.friended = features::friends::IsFriend(e.user_id);
 

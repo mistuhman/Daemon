@@ -286,26 +286,38 @@ static void FollowGameRect() {
     }
 }
 
-// One place decides whether the window exists on screen at all. Two reasons
-// to hide, both logged: --locked with no game window, and streamproof while a
-// capture app runs (X11 has no per-window exclude-from-capture — unmap is the
-// honest mechanism, and window capture of Sober never sees a separate window).
-static void ApplyVisibility(bool capturer, const char* capturer_name) {
-    const bool want_hidden = (g_locked_to_sober && !s_have_game) ||
-                             (streamproof_enabled && capturer);
+// One place decides whether the window exists on screen at all. Three
+// reasons to hide, all logged: --locked with no game window, streamproof
+// while a capture app runs, and IDLE (nothing to draw). The idle case is
+// the 013 performance contract: a fullscreen ARGB window that keeps
+// swapping forces the compositor to recomposite the whole screen at swap
+// rate with the game queued behind it (the 012 receipt: "<4 fps on the
+// error screen... 20 fps is not more playable"). Unmapped, the game goes
+// back to the unredirected fast path and the overlay costs nothing. X11
+// has no per-window exclude-from-capture — unmap is also the honest
+// streamproof mechanism.
+static void ApplyVisibility(bool capturer, const char* capturer_name, bool idle) {
+    const char* why = nullptr;
+    if (g_locked_to_sober && !s_have_game)
+        why = "locked to Sober — no game window yet";
+    else if (streamproof_enabled && capturer)
+        why = capturer_name && capturer_name[0] ? capturer_name : "a capture app";
+    else if (idle)
+        why = "idle — nothing to draw, overlay unmapped (the game runs unredirected)";
+    const bool want_hidden = (why != nullptr);
     if (want_hidden == s_hidden) return;
     s_hidden = want_hidden;
     if (want_hidden) {
         SDL_HideWindow(s_window);
         if (streamproof_enabled && capturer)
-            LogLine("Daemon: streamproof — %s is capturing, overlay hidden from the frame",
-                    capturer_name && capturer_name[0] ? capturer_name : "a capture app");
+            LogLine("Daemon: streamproof — %s is capturing, overlay hidden from the frame", why);
         else
-            LogLine("Daemon: locked to Sober — no game window yet, overlay hidden");
+            LogLine("Daemon: overlay hidden — %s", why);
     } else {
         SDL_ShowWindow(s_window);
-        LogLine("Daemon: visible again — %s",
-                g_locked_to_sober ? "Sober's window is back under the overlay" : "capturer gone");
+        LogLine("Daemon: overlay visible again — %s",
+                g_locked_to_sober ? "the game window is back under the overlay"
+                                  : "menu/ESP activity");
     }
 }
 
@@ -341,6 +353,18 @@ static bool TryCreateWindow() {
     SDL_setenv("SDL_VIDEODRIVER", "x11", 0);
     SDL_setenv("SDL_VIDEO_X11_WMCLASS", "daemon", 1);
     SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
+    // Override-redirect: the 012 receipt's "overlay disappears whenever i
+    // focus on sober". A WM-managed window — even _NET_WM_STATE_ABOVE —
+    // loses to the focused fullscreen game in xfwm4's layer model, and the
+    // EWMH re-raise war just flickered. An OR window is outside WM stacking
+    // entirely: it stays wherever XRaiseWindow puts it (EnsureAboveGame), the
+    // WM can never layer it under the game, and it never steals focus.
+    // SDL creates the window with xattr.override_redirect=True when this
+    // hint is set (SDL_x11window.c) — same code path as SDL_WINDOW_TOOLTIP,
+    // without tooltip semantics. AttachWindow() (by exact xid from
+    // SDL_GetWindowWMInfo) replaces the WM_CLASS scan, which only sees
+    // _NET_CLIENT_LIST and is blind to OR windows.
+    SDL_SetHint("SDL_X11_FORCE_OVERRIDE_REDIRECT", "1");
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         LogLine("Daemon: SDL_Init failed: %s — headless fallback", SDL_GetError());
@@ -474,13 +498,25 @@ static bool TryCreateWindow() {
     s_window = win;
     s_gl = ctx;
 
-    // Wire the X11 overlay control: our window by WM_CLASS, dock hints,
-    // hotkeys, and the initial input shape (menu starts open -> input on).
-    if (!x11overlay::AttachSelf("daemon")) {
-        FailHeadless("overlay window not found via WM_CLASS (no EWMH?)");
+    // Wire the X11 overlay control. The window id comes straight from SDL
+    // (SDL_GetWindowWMInfo) — the exact xid, no scanning: an override-redirect
+    // window never appears in _NET_CLIENT_LIST, so the old WM_CLASS scan
+    // (AttachSelf) cannot find it. AttachSelf stays as the fallback for a
+    // managed window (hint refused, WMInfo failed).
+    SDL_SysWMinfo wm{};
+    SDL_VERSION(&wm.version);
+    unsigned long xid = 0;
+#if defined(SDL_VIDEO_DRIVER_X11)
+    if (SDL_GetWindowWMInfo(win, &wm) && wm.subsystem == SDL_SYSWM_X11)
+        xid = (unsigned long)wm.info.x11.window;
+#endif
+    if ((xid && x11overlay::AttachWindow(xid)) || x11overlay::AttachSelf("daemon")) {
+        // managed only (OR windows ignore EWMH): harmless no-op for OR
+        x11overlay::SetDockHints();
+    } else {
+        FailHeadless("overlay window not found (neither WMInfo xid nor WM_CLASS scan)");
         return false;
     }
-    x11overlay::SetDockHints();
     x11overlay::StartToggleHotkeys(&RequestMenuToggle);
     s_per_pixel = (x11overlay::WindowDepth() == 32);
     if (!s_per_pixel) {
@@ -523,6 +559,9 @@ void run() {
         bool done = false;
         bool needs_repaint = true;
         uint64_t last_follow = 0;
+        uint64_t last_raise = 0;
+        uint64_t last_swap = 0;
+        uint64_t last_hb = 0;
 
         auto handle_event = [&](const SDL_Event& ev) {
             ImGui_ImplSDL2_ProcessEvent(&ev);
@@ -544,28 +583,54 @@ void run() {
                     s_toggle_requested.store(true, std::memory_order_relaxed);
                 }
             }
+            if (ev.type == SDL_MOUSEBUTTONDOWN && s_overlay_mode && g_state.menu_open) {
+                // An override-redirect window cannot be activated by the WM,
+                // so a click that reaches us (the input shape is the menu's
+                // windows only) is a deliberate grab: take keyboard focus so
+                // text fields work. FocusGameWindow() hands it back when the
+                // menu closes.
+                SDL_SetWindowInputFocus(s_window);
+            }
         };
 
         while (!g_request_exit && !done) {
             SDL_Event ev;
-            if (needs_repaint) {
-                while (SDL_PollEvent(&ev)) handle_event(ev);
-            } else {
-                // Idle: nothing to draw (menu closed, no ESP/HUD). Block on
-                // events instead of presenting empty frames at refresh rate —
-                // the same fix as the static shell in payload 007.
-                if (SDL_WaitEventTimeout(&ev, 200) == 1) handle_event(ev);
-                while (SDL_PollEvent(&ev)) handle_event(ev);
-            }
+            while (SDL_PollEvent(&ev)) handle_event(ev);
             if (done || g_request_exit) break;
 
             if (s_toggle_requested.exchange(false, std::memory_order_relaxed)) {
                 g_state.menu_open = !g_state.menu_open;
+                needs_repaint = true;
+                if (!g_state.menu_open && s_overlay_mode) {
+                    // Menu closed: hand keyboard focus back to the game (we
+                    // only hold it after a click inside the menu).
+                    x11overlay::FocusGameWindow();
+                }
             }
             // render_ui() publishes this, but the idle gate means no frame runs
             // while the menu is closed and nothing else draws — publish here so
             // the flag never lags the actual menu state.
             g_menu_open.store(g_state.menu_open, std::memory_order_relaxed);
+
+            // ---- what would this frame draw, and at what rate? (013) -------
+            // menu open            -> interactive, every frame
+            // live ESP/HUD feature -> capped at ~30 fps
+            // read-only plates     -> capped at 2 Hz (the fps counter does not
+            //                         change faster; the game pays one
+            //                         compositor pass per swap, not per game
+            //                         frame)
+            // nothing              -> idle: the window is unmapped and the
+            //                         game returns to the unredirected fast
+            //                         path (ApplyVisibility)
+            const bool media_draw = show_now_playing && media::Get().playing;
+            const bool live_features =
+                esp_enabled || aimbot_enabled || show_waypoints ||
+                skeleton_esp || chinahat || aimviewer || chams_enabled || mesh_chams ||
+                render_expanded_hitbox || headdot_enabled || oof_enabled ||
+                inventory_checker_enabled || night_enabled || fullbright_enabled ||
+                world_ambient_enabled;
+            const bool plates = show_fps || media_draw;
+            const bool draw_anything = g_state.menu_open || live_features || plates;
 
             // Geometry + visibility, in BOTH window modes: --locked and
             // streamproof are contracts, not overlay-mode conveniences.
@@ -575,21 +640,34 @@ void run() {
                     last_follow = now;
                     if (s_overlay_mode) {
                         FollowGameRect();
-                        // A focus-stealing override can drop us under the game
-                        // between frames; every follow tick re-checks the EWMH
-                        // stacking list and only raises when it says we lost.
-                        x11overlay::EnsureAboveGame();
                     } else {
                         int gx = 0, gy = 0, gw = 0, gh = 0;
                         s_have_game = platform::GameClientRect(gx, gy, gw, gh) &&
                                       gw >= 320 && gh >= 240;
                     }
                 }
-                // Visibility (locked / streamproof) — cheap: the watcher
-                // throttles its /proc scan internally to 2 s.
+                // Stacking guard on its own faster cadence: a click on the
+                // game raises it above us (plain stack order), and the OR
+                // window's XRaiseWindow always wins — 100 ms bounds the
+                // blink instead of the 250 ms follow tick.
+                if (s_overlay_mode && now - last_raise >= 100) {
+                    last_raise = now;
+                    x11overlay::EnsureAboveGame();
+                }
+                // Heartbeat: one line every 10 s so a receipt settles
+                // geometry/stacking/visibility questions without a second
+                // round trip.
+                if (now - last_hb >= 10000) {
+                    last_hb = now;
+                    if (s_overlay_mode) LogLine("Daemon: hb — %s", OverlayStatus());
+                }
+                // Visibility (locked / streamproof / idle) — cheap: the
+                // watcher throttles its /proc scan internally to 2 s.
+                const bool was_hidden = s_hidden;
                 ApplyVisibility(streamproof_enabled &&
                                     streamproof::CapturerRunning(streamproof_apps),
-                                streamproof::CapturerName());
+                                streamproof::CapturerName(),
+                                s_overlay_mode && !draw_anything);
                 if (s_hidden) {
                     // Unmapped window: nothing to draw. Keep pumping events so
                     // the unload hotkey and close path stay live.
@@ -597,6 +675,7 @@ void run() {
                     SDL_Delay(50);
                     continue;
                 }
+                if (was_hidden) needs_repaint = true;   // first frame after unhide
             }
 
             if (s_overlay_mode) {
@@ -637,13 +716,25 @@ void run() {
                 }
             }
 
-            const bool draw_anything =
-                g_state.menu_open || esp_enabled || aimbot_enabled || show_waypoints ||
-                skeleton_esp || chinahat || aimviewer || chams_enabled || mesh_chams ||
-                render_expanded_hitbox || headdot_enabled || oof_enabled ||
-                inventory_checker_enabled || show_now_playing || show_fps ||
-                night_enabled || fullbright_enabled || world_ambient_enabled;
-            if (!draw_anything && !needs_repaint) continue;
+            // Frame budget (the 013 cost contract): the game pays one
+            // compositor pass per SWAP of ours, not per its own frame — so
+            // the swap rate is the cost knob. Menu: uncapped (interactive).
+            // Live features: 33 ms (~30 fps is plenty for ESP). Plates only:
+            // 500 ms (the numbers change ~1 Hz). Waiting blocks on events so
+            // input latency stays low without a busy spin.
+            {
+                const uint64_t budget =
+                    g_state.menu_open ? 0u : (live_features ? 33u : 500u);
+                const uint64_t since_swap = platform::NowMs() - last_swap;
+                if (!needs_repaint && since_swap < budget) {
+                    SDL_Event wv;
+                    const uint64_t remain = budget - since_swap;
+                    if (SDL_WaitEventTimeout(&wv,
+                            (int)(remain > 50 ? 50 : remain)) == 1)
+                        handle_event(wv);
+                    continue;
+                }
+            }
             needs_repaint = false;
 
             if (menuui::SyncTheme()) {
@@ -669,6 +760,7 @@ void run() {
                 ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             }
             SDL_GL_SwapWindow(s_window);
+            last_swap = platform::NowMs();
         }
 
         if (s_gl) SDL_GL_DeleteContext(s_gl);

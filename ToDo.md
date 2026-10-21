@@ -122,8 +122,6 @@ Logged automatically by `node agent/context.ts` — the 12 most recent entries a
 mirrored here from `agent/memory/session.jsonl` (which keeps everything).
 
 <!-- session-log:start -->
-- 2026-10-20T10:18:00.234Z · arena/fcc8ff24-daemon@b06a28e · Implemented ti-11 identity in bootstrapper title/header/log, SDL title, startup log, and desktop launcher. Added post-success iteration cleanup: marker-based going forward, strict legacy fingerprints only for 009/010, current tree preserved, each deletion printed. Added mirror authoring rule 13.7 without modifying frozen courier functions. Cleanup fixture, full build, boot smoke, and full gates run. (dirty:9)
-- 2026-10-20T10:46:10.244Z · arena/f3c07cfc-daemon@39b2df1 · context pass (dirty:0)
 - 2026-10-20T10:49:26.871Z · arena/f3c07cfc-daemon@39b2df1 · context pass + checks (dirty:8)
 - 2026-10-20T10:51:30.885Z · arena/f3c07cfc-daemon@39b2df1 · context pass + full checks (dirty:8)
 - 2026-10-20T10:51:57.158Z · arena/f3c07cfc-daemon@39b2df1 · context pass + full checks (dirty:8)
@@ -134,4 +132,6 @@ mirrored here from `agent/memory/session.jsonl` (which keeps everything).
 - 2026-10-21T07:33:07.865Z · arena/6bd2b9b2-daemon@b19f4f6 · context pass + checks (dirty:7)
 - 2026-10-21T07:33:13.540Z · arena/6bd2b9b2-daemon@b19f4f6 · context pass + checks (dirty:7)
 - 2026-10-21T07:33:13.678Z · arena/6bd2b9b2-daemon@b19f4f6 · ti-13 payload 012 staged: follow targets compete on area within evidence tier (attach pid > sober guess > class gate, >=320x240), XFixes input shape scoped to the menu's own windows via SetInputRects (menuui::LastRect/FeatureRect), --locked starts menu closed (click-through at launch), StatusLine follow= d-decl compile fix (main was broken in X11 shape), input=thru|menu|full wording. 5-shape compile proof vs real headers (mirror/libX11, rwiggins/xorgproto, libXfixes mirror, SDL 2.30.10, libglvnd GL/KHR). (dirty:7)
+- 2026-10-21T08:33:45.369Z · arena/2c231ec3-daemon@6951347 · context pass + checks (dirty:8)
+- 2026-10-21T08:33:45.635Z · arena/2c231ec3-daemon@6951347 · ti-14 payload 013: tiered presentation (menu=interactive, ESP=33ms, plates=500ms, idle=UNMAP -> game unredirected), cache walk gated 16ms<->250ms on consumers, overlay override-redirect via SDL_X11_FORCE_OVERRIDE_REDIRECT + AttachWindow(xid from WMInfo) + XQueryTree EnsureAboveGame @100ms, menu focus click-to-grab/hand-back, StatusLine or/viewable/active + 10s heartbeat, doctor prints xfwm4 compositing facts, menu_linux %.31s fix. 012 receipt: game FPS 4->20 (compositor bill), overlay vanishes on game focus (xfwm4 fullscreen stacking), Sober error screen at launch (suspect ban, not us — reads are process_vm_readv; asked for kill-daemon-boot retest + error text). (dirty:10)
 <!-- session-log:end -->

@@ -65,6 +65,14 @@ ls -lh "$ROOT/build/daemon-boot" >/dev/null 2>&1 && echo "BOOT_DONE=YES" || echo
 # ---- doctor: the walls a fresh operator box puts up (docs/BOOTSTRAPPER.md) --
 echo "[doctor] ---- readiness scan (daemon-boot --check) ----"
 "$ROOT/build/daemon-boot" --check 2>&1 || true
+# Compositor facts, read-only (the 013 performance story lives here): whether
+# xfwm4 composites at all, and whether it unredirects fullscreen windows. An
+# ARGB overlay over the game only works with compositing ON, and fullscreen
+# unredirect is the fast path the game loses while anything overlaps it.
+if command -v xfconf-query >/dev/null 2>&1; then
+    echo "[doctor] xfwm4 compositing=$(xfconf-query -c xfwm4 -p /general/use_compositing 2>/dev/null || echo default)"
+    echo "[doctor] xfwm4 unredirect_overlays=$(xfconf-query -c xfwm4 -p /general/unredirect_overlays 2>/dev/null || echo default)"
+fi
 if [ -r /proc/sys/kernel/yama/ptrace_scope ]; then
     Y=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo "?")
     if [ "$Y" != "0" ]; then

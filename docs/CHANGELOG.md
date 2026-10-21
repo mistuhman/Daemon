@@ -7,6 +7,55 @@ Branch-level changelog. Commit hashes reference `Glockerz/roblox-external`.
 ## 10. Changelog (this branch)
 
 ```
+HEAD     PAYLOAD 013 — THE COST CONTRACT, THE WM BYPASS, AND THE OVERLAY THAT
+         STOPS DISAPPEARING. The 012 receipt came in three parts: the overlay
+         now sat on the game (follow fix proven live) but "disappears
+         whenever i focus on sober", performance "still abysmal" — "<4 fps
+         on the error screen... fixes itself a second later [to] 20 fps" —
+         and Sober itself erroring at every launch (dark dialog, no text
+         OCRable in this sandbox; nothing in the daemon writes to Sober —
+         reads are process_vm_readv — so that screen is most plausibly the
+         banned alt refusing to start, and the receipt test for it is: kill
+         daemon-boot and open Sober alone). Three answers, shipped:
+         (1) COST: the game pays one compositor pass per SWAP of ours, not
+         per its own frame — and 012 swapped a fullscreen 2560x1440 ARGB
+         window at vsync FOREVER because show_fps defaults on, so the
+         compositor recomposited the whole screen 60x/s with the game
+         queued behind it (in 011 the overlay sat over a browser tab, so
+         the game was unredirected and fast; the follow fix moved it onto
+         the game and exposed the bill). Presentation is now tiered: menu
+         open = interactive; live ESP/HUD = 33 ms cap; read-only plates =
+         500 ms (the fps number changes ~1 Hz); NOTHING to draw = the
+         window is UNMAPPED and the game returns to the unredirected fast
+         path (ApplyVisibility gained the idle reason; the log says so).
+         The cache walk gets the same gate: 16 ms only while the menu is
+         open or a memory feature is on, else 250 ms — it was reading the
+         whole instance tree 60x/s for nobody. (2) STACKING: the overlay
+         window is now override-redirect (SDL_X11_FORCE_OVERRIDE_REDIRECT —
+         SDL sets xattr.override_redirect, the same path as TOOLTIP); a WM
+         can never layer an OR window under the focused fullscreen game,
+         which is what "disappears whenever i focus on sober" was (xfwm4
+         kept the fullscreen game above our _NET_WM_STATE_ABOVE managed
+         window and the 250 ms EWMH re-raise war just blinked). Our window
+         id now comes from SDL_GetWindowWMInfo (x11overlay::AttachWindow —
+         the exact xid; the WM_CLASS scan was blind to OR windows since
+         they never enter _NET_CLIENT_LIST), EnsureAboveGame reads the REAL
+         stacking order (XQueryTree children, bottom-to-top) and XRaise-
+         Window wins by construction, checked at 100 ms. Menu keyboard:
+         OR windows are not WM-activatable, so a click inside the menu's
+         input region takes focus (SDL_SetWindowInputFocus) and closing the
+         menu hands it back (FocusGameWindow). (3) DIAGNOSIS: StatusLine
+         grew or= viewable= active= (is the window OR, mapped, who holds
+         focus), a 10 s heartbeat line lands in overlay.log, setup's doctor
+         prints xfwm4 compositing/unredirect_overlays, and the menu's one
+         build warning (menu_linux.cpp snprintf into char[32] from
+         char[64]) is fixed with %.31s. Compile-proven against real headers
+         (SDL 2.30.10 source + mirror/libX11 + rwiggins/xorgproto +
+         libXfixes mirror + libglvnd GL/KHR): platform_linux 3 shapes,
+         overlay_linux 3 shapes (incl. -DSDL_VIDEO_DRIVER_X11 for the
+         SysWMinfo x11 union), cache, menu_linux — all clean at
+         -Wall -Wextra -Wpedantic.
+```
 HEAD     PAYLOAD 012 — CLICK-THROUGH THAT SURVIVES THE MENU, AND THE RIGHT
          FOLLOW TARGET. The 011 receipt arrived as a screenshot: overlay up,
          transparent (ARGB worked), menu drawn — parked over a Firefox tab

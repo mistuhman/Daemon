@@ -705,6 +705,18 @@ bool AttachSelf(const char* wm_class)
     return false;
 }
 
+bool AttachWindow(unsigned long xid)
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d || !xid) return false;
+    XWindowAttributes wa{};
+    if (!XGetWindowAttributes(d, (Window)xid, &wa)) return false;
+    g_self = (Window)xid;
+    g_depth = wa.depth;
+    return true;
+}
+
 bool SetDockHints()
 {
     std::lock_guard<std::mutex> lk(g_ctl_mutex);
@@ -946,8 +958,15 @@ uint64_t ArgbVisualId()
 #endif
 }
 
-// Follow-tick stacking guard: trust the EWMH stacking list first, and only pay
-// for a client message + raise when it says we are UNDER the game.
+// Follow-tick stacking guard. The REAL stacking order is XQueryTree's
+// children list (bottom-to-top) — _NET_CLIENT_LIST_STACKING only contains
+// WM-managed windows and cannot see our override-redirect overlay at all
+// (the 012 guard read "cannot see both" and never raised). When the game is
+// above us we XRaiseWindow: for an OR window the WM neither layers nor
+// restacks it, so the raise always wins. A managed window could not do
+// this — that is exactly the 012 receipt (focused fullscreen game stacked
+// over our _NET_WM_STATE_ABOVE window, overlay "disappeared whenever i
+// focus on sober").
 bool EnsureAboveGame()
 {
     std::lock_guard<std::mutex> lk(g_ctl_mutex);
@@ -956,33 +975,40 @@ bool EnsureAboveGame()
     const Window root = DefaultRootWindow(d);
     const Window gw = FindGameWindow(d, root, g_game_pid);
     if (gw == None) return true;               // no game window yet: nothing to beat
-    Atom stacking = XInternAtom(d, "_NET_CLIENT_LIST_STACKING", True);
-    std::vector<unsigned long> order;
-    if (stacking && ReadProp32(d, root, stacking, order)) {
+    Window r = 0, parent = 0, *children = nullptr;
+    unsigned n = 0;
+    bool above = false;
+    if (XQueryTree(d, root, &r, &parent, &children, &n)) {
         long our_i = -1, game_i = -1;
-        for (size_t i = 0; i < order.size(); ++i) {
-            if ((Window)order[i] == g_self)  our_i = (long)i;
-            else if ((Window)order[i] == gw) game_i = (long)i;
+        for (unsigned i = 0; i < n; ++i) {
+            if (children[i] == g_self) our_i = (long)i;
+            else if (children[i] == gw) game_i = (long)i;
         }
-        // bottom-to-top list: a higher index is already on top.
-        if (our_i >= 0 && game_i >= 0 && our_i > game_i) return true;
-        if (our_i < 0 || game_i < 0)
-            return true;   // we cannot see both: dock hints already asked for ABOVE
+        if (children) XFree(children);
+        // children are bottom-to-top: a higher index is on top.
+        if (our_i >= 0 && game_i >= 0) above = (our_i > game_i);
+        else if (our_i >= 0) above = true;     // game not in the tree: nothing to beat
+        else return true;                      // we are not in the tree (?): give up quietly
     }
-    const Atom state  = XInternAtom(d, "_NET_WM_STATE", False);
-    const Atom above  = XInternAtom(d, "_NET_WM_STATE_ABOVE", False);
-    XEvent ev{};
-    ev.xclient.type         = ClientMessage;
-    ev.xclient.window       = g_self;
-    ev.xclient.message_type = state;
-    ev.xclient.format       = 32;
-    ev.xclient.data.l[0]    = 1;               // _NET_WM_STATE_ADD
-    ev.xclient.data.l[1]    = (long)above;
-    ev.xclient.data.l[2]    = 0;
-    ev.xclient.data.l[3]    = 1;               // source: application
-    XSendEvent(d, root, False,
-               SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+    if (above) return true;
     XRaiseWindow(d, g_self);
+    XFlush(d);
+    return true;
+}
+
+// Hand keyboard focus back to the game window — used when our menu closes
+// after we took focus for text input. Best effort by design.
+bool FocusGameWindow()
+{
+    std::lock_guard<std::mutex> lk(g_ctl_mutex);
+    Display* d = Ctl();
+    if (!d) return false;
+    const Window root = DefaultRootWindow(d);
+    const Window gw = FindGameWindow(d, root, g_game_pid);
+    if (gw == None) return false;
+    XWindowAttributes wa{};
+    if (!XGetWindowAttributes(d, gw, &wa) || wa.map_state != IsViewable) return false;
+    XSetInputFocus(d, gw, RevertToPointerRoot, CurrentTime);
     XFlush(d);
     return true;
 }
@@ -1110,9 +1136,32 @@ const char* StatusLine()
         snprintf(follow, sizeof(follow), "%s%s%s", cls.c_str(),
                  t.empty() ? "" : " | ", t.c_str());
     }
+    // The three facts the 012 receipt could not name: is the window actually
+    // override-redirect (WM cannot stack it under the game), is it mapped
+    // (viewable — ApplyVisibility/xfwm4 questions), and who holds focus
+    // ('g'ame, 'u's, 'o'ther, '-' none). or=-1/viewable=-1 = query failed.
+    int or_redir = -1, viewable = -1;
+    if (g_self) {
+        XWindowAttributes wa{};
+        if (XGetWindowAttributes(d, g_self, &wa)) {
+            or_redir = wa.override_redirect ? 1 : 0;
+            viewable = (wa.map_state == IsViewable) ? 1 : 0;
+        }
+    }
+    char active = '-';
+    {
+        Atom act = XInternAtom(d, "_NET_ACTIVE_WINDOW", True);
+        std::vector<unsigned long> av;
+        if (ReadProp32(d, root, act, av) && !av.empty()) {
+            const Window aw = (Window)av[0];
+            if (aw == g_self) active = 'u';
+            else if (gw != None && aw == gw) active = 'g';
+            else if (aw) active = 'o';
+        }
+    }
     snprintf(g_status, sizeof(g_status),
-             "x11: window=%s depth=%d xfixes=%d input=%s hotkeys=%s pid=%u follow=%s",
-             g_self ? "found" : "not found", g_depth,
+             "x11: window=%s depth=%d or=%d viewable=%d active=%c xfixes=%d input=%s hotkeys=%s pid=%u follow=%s",
+             g_self ? "found" : "not found", g_depth, or_redir, viewable, active,
 #if defined(HAS_XFIXES)
              1,
 #else
@@ -1133,14 +1182,16 @@ namespace x11overlay {
 bool Available() { return false; }
 void SetGamePid(uint32_t) {}
 bool AttachSelf(const char*) { return false; }
+bool AttachWindow(unsigned long) { return false; }
 bool SetDockHints() { return false; }
 bool SetClickThrough(bool) { return false; }
 bool SetInputRects(const int*, int) { return false; }
 bool StartToggleHotkeys(void (*)()) { return false; }
+bool EnsureAboveGame() { return false; }
+bool FocusGameWindow() { return false; }
 int WindowDepth() { return 0; }
 bool ArgbVisualAvailable() { return false; }
 uint64_t ArgbVisualId() { return 0; }
-bool EnsureAboveGame() { return false; }
 bool GameWindowRect(int&, int&, int&, int&) { return false; }
 char ActiveWindowKind() { return 0; }
 bool CursorScreen(int&, int&) { return false; }
